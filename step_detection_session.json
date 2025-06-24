@@ -1,0 +1,20 @@
+{
+  "total_steps": 0,
+  "step_timestamps": [],
+  "statistics": {
+    "total_steps": 0,
+    "elapsed_time_seconds": 6.602190971374512,
+    "steps_per_minute": 0.0,
+    "steps_per_hour": 0.0,
+    "avg_processing_time_ms": 0.7148647308349609,
+    "max_processing_time_ms": 2.8557777404785156,
+    "buffer_utilization": 1.0,
+    "last_step_time": null,
+    "recent_step_timestamps": []
+  },
+  "configuration": {
+    "start_threshold": 0.4,
+    "end_threshold": 0.4,
+    "window_size": 10
+  }
+}
