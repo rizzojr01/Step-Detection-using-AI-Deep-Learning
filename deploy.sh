@@ -66,7 +66,7 @@ printf "${CYAN}Starting new container...${NC}\n"
 docker run -d \
   --name "$CONTAINER_NAME" \
   --restart unless-stopped \
-  -p "$PORT:8080" \
+  -p "$PORT:8000" \
   "$FULL_TAG"
 
 printf "${GREEN}Deployment complete!${NC}\n"

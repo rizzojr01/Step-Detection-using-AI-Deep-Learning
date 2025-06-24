@@ -75,6 +75,28 @@ if [[ ! -f "Dockerfile" ]]; then
   exit 1
 fi
 
+# Check if pre-trained model exists, if not, train it
+printf "${CYAN}🧠 Checking for pre-trained model...${NC}\n"
+if [[ ! -f "models/trained_step_detection_model.pth" ]]; then
+  printf "${YELLOW}⚠️  Pre-trained model not found. Training model first...${NC}\n"
+  
+  # Create models directory if it doesn't exist
+  mkdir -p models
+  
+  # Train the model
+  printf "${CYAN}🏃‍♂️ Training step detection model...${NC}\n"
+  python train_and_save_model.py
+  
+  if [[ $? -ne 0 ]]; then
+    echo -e "${RED}❌ Model training failed!${NC}"
+    exit 1
+  fi
+  
+  printf "${GREEN}✅ Model training completed successfully!${NC}\n"
+else
+  printf "${GREEN}✅ Pre-trained model found: models/trained_step_detection_model.pth${NC}\n"
+fi
+
 # 1. Build the image
 printf "${CYAN}🔨 Building Docker image...${NC}\n"
 docker build -t "$FULL_TAG" .

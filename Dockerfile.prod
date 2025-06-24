@@ -42,7 +42,8 @@ ENV PATH="/app/.venv/bin:$PATH"
 
 # Copy application code
 COPY *.py ./
-COPY Sample\ Data/ ./Sample\ Data/
+COPY README.md ./
+COPY models/ ./models/
 COPY pyproject.toml ./
 
 # Create non-root user

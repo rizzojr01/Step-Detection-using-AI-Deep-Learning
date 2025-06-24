@@ -26,6 +26,7 @@ import torch
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
+from initialize_model import load_production_model
 from realtime_step_detector import RealTimeStepCounter
 
 # FastAPI app instance
@@ -149,41 +150,31 @@ class APIResponse(BaseModel):
 
 
 def initialize_model():
-    """Initialize the step detection model"""
+    """Initialize the step detection model using pre-trained weights"""
     global step_counter
 
     try:
-        # Define the CNN model architecture (simplified for single-sample input)
-        class StepDetectionCNN(torch.nn.Module):
-            def __init__(self):
-                super(StepDetectionCNN, self).__init__()
-                # Use fully connected layers directly since we're processing single sensor readings
-                self.fc1 = torch.nn.Linear(
-                    6, 64
-                )  # 6 input features (accel_x,y,z + gyro_x,y,z)
-                self.fc2 = torch.nn.Linear(64, 32)
-                self.fc3 = torch.nn.Linear(32, 3)  # 3 classes: no step, start, end
-                self.dropout = torch.nn.Dropout(0.5)
+        # Load the pre-trained model
+        model, device = load_production_model()
 
-            def forward(self, x):
-                # x should have shape [batch_size, 6] for sensor data
-                x = torch.nn.functional.relu(self.fc1(x))
-                x = self.dropout(x)
-                x = torch.nn.functional.relu(self.fc2(x))
-                x = self.fc3(x)
-                return x
+        if model is None:
+            print(
+                "❌ Failed to load pre-trained model, falling back to untrained model"
+            )
+            # Fallback to creating a new model with random weights
+            from initialize_model import StepDetectionCNN
 
-        # Initialize model
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        model = StepDetectionCNN().to(device)
-        model.eval()
+            device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+            model = StepDetectionCNN().to(device)
+            model.eval()
+            print(f"⚠️  Using untrained model on {device}")
 
-        # Initialize step counter
+        # Initialize step counter with the loaded model
         step_counter = RealTimeStepCounter(model=model, device=str(device))
         step_counter.start_threshold = 0.3
         step_counter.end_threshold = 0.3
 
-        print(f"✅ Model initialized successfully on {device}")
+        print(f"✅ Step counter initialized successfully")
         print(f"   Start threshold: {step_counter.start_threshold}")
         print(f"   End threshold: {step_counter.end_threshold}")
         return True

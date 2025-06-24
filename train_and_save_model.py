@@ -41,12 +41,14 @@ def main():
 
     # Convert to tensors
     X_train = torch.FloatTensor(X_train).to(device)
-    y_train = torch.FloatTensor(y_train).to(device)
+    y_train = torch.LongTensor(y_train).to(device)  # LongTensor for class indices
     X_val = torch.FloatTensor(X_val).to(device)
-    y_val = torch.FloatTensor(y_val).to(device)
+    y_val = torch.LongTensor(y_val).to(device)  # LongTensor for class indices
 
     # Training setup
-    criterion = torch.nn.BCELoss()
+    criterion = (
+        torch.nn.CrossEntropyLoss()
+    )  # Use CrossEntropyLoss for 3-class classification
     optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
     epochs = 50
 
@@ -57,7 +59,9 @@ def main():
     for epoch in range(epochs):
         optimizer.zero_grad()
         outputs = model(X_train)
-        loss = criterion(outputs.squeeze(), y_train)
+        loss = criterion(
+            outputs, y_train
+        )  # CrossEntropyLoss expects raw logits and class indices
         loss.backward()
         optimizer.step()
 
@@ -66,8 +70,11 @@ def main():
             model.eval()
             with torch.no_grad():
                 val_outputs = model(X_val)
-                val_loss = criterion(val_outputs.squeeze(), y_val)
-                accuracy = ((val_outputs.squeeze() > 0.5) == y_val).float().mean()
+                val_loss = criterion(val_outputs, y_val)
+
+                # Calculate accuracy for multi-class classification
+                _, predicted = torch.max(val_outputs, 1)
+                accuracy = (predicted == y_val).float().mean()
 
             print(
                 f"Epoch {epoch+1}/{epochs} - Loss: {loss:.4f} - Val Loss: {val_loss:.4f} - Accuracy: {accuracy:.4f}"

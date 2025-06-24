@@ -1,3 +1,9 @@
+# Sample Data (only needed for training, not production)
+Sample\ Data/
+sample_data/
+*.csv
+*.stepMixed
+
 # Python
 __pycache__/
 *.py[cod]
@@ -45,6 +51,12 @@ Thumbs.db
 
 # Jupyter Notebook
 .ipynb_checkpoints
+*.ipynb
+
+# Training and development scripts (not needed in production)
+train_and_save_model.py
+build-optimized.sh
+setup-docker.sh
 
 # Test files
 test_*.py
