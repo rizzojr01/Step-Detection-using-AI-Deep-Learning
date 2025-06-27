@@ -1,0 +1,43 @@
+# Step Detection Configuration
+
+# Model Configuration
+model:
+  input_shape: [6] # 6 sensor features (3 accel + 3 gyro)
+  output_classes: 3 # No Label, Start, End
+  architecture: "CNN"
+  framework: "TensorFlow"
+
+# Training Configuration
+training:
+  epochs: 50
+  batch_size: 64
+  learning_rate: 0.001
+  validation_split: 0.2
+  early_stopping_patience: 10
+  reduce_lr_patience: 5
+
+# Detection Configuration
+detection:
+  start_threshold: 0.03
+  end_threshold: 0.03
+  window_size: 50
+
+# Data Configuration
+data:
+  raw_data_path: "data/raw"
+  processed_data_path: "data/processed"
+  model_save_path: "models"
+
+# API Configuration
+api:
+  host: "0.0.0.0"
+  port: 8000
+  reload: true
+  title: "Step Detection API"
+  version: "1.0.0"
+
+# Logging Configuration
+logging:
+  level: "INFO"
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  log_file: "logs/step_detection.log"
