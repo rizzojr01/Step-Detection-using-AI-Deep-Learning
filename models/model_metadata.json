@@ -1,0 +1,10 @@
+{
+  "model_type": "CNN",
+  "framework": "TensorFlow/Keras",
+  "input_shape": [
+    6
+  ],
+  "output_classes": 3,
+  "validation_accuracy": 0.9623861914324787,
+  "epochs_trained": 50
+}

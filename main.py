@@ -7,6 +7,8 @@ Demonstrates how to use the modular components.
 import os
 import sys
 
+import numpy as np
+
 # Import from the step detection package
 from src.step_detection import (
     SimpleStepCounter,
@@ -18,6 +20,87 @@ from src.step_detection import (
     save_model_and_metadata,
     train_model,
 )
+
+
+def optimize_thresholds():
+    """Find optimal thresholds for step detection."""
+    print("\n🔧 Optimizing Step Detection Thresholds")
+    print("=" * 40)
+
+    model_path = "models/step_detection_model.keras"
+
+    if not os.path.exists(model_path):
+        print(f"❌ Model not found: {model_path}")
+        print("Please train a model first using the training option.")
+        return False
+
+    try:
+        # Load model and data
+        import tensorflow as tf
+
+        model = tf.keras.models.load_model(model_path)
+
+        print("Loading validation data...")
+        df = load_step_data("data/raw")
+        train_features, val_features, train_labels, val_labels = (
+            prepare_data_for_training(df)
+        )
+
+        # Get predictions on validation data
+        print("Getting model predictions...")
+        predictions = model.predict(val_features, verbose=0)
+
+        # Handle labels - they should already be integers (0, 1, 2) for sparse_categorical_crossentropy
+        if len(val_labels.shape) > 1 and val_labels.shape[1] > 1:
+            # If one-hot encoded, convert to integers
+            val_true_classes = np.argmax(val_labels, axis=1)
+        else:
+            # Already integers
+            val_true_classes = val_labels
+
+        # Test different thresholds
+        thresholds = [0.01, 0.02, 0.03, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3]
+        best_threshold = 0.03
+        best_score = 0
+
+        print("\nTesting different thresholds:")
+        for thresh in thresholds:
+            # Count predictions above threshold
+            start_predictions = (predictions[:, 1] > thresh).sum()
+            end_predictions = (predictions[:, 2] > thresh).sum()
+
+            # Count actual labels
+            actual_starts = (val_true_classes == 1).sum()
+            actual_ends = (val_true_classes == 2).sum()
+
+            # Simple scoring based on how close predictions are to actual counts
+            start_score = min(start_predictions, actual_starts) / max(
+                start_predictions, actual_starts, 1
+            )
+            end_score = min(end_predictions, actual_ends) / max(
+                end_predictions, actual_ends, 1
+            )
+            overall_score = (start_score + end_score) / 2
+
+            print(
+                f"  Threshold {thresh:.3f}: Start preds={start_predictions:4d} (actual={actual_starts}), "
+                f"End preds={end_predictions:4d} (actual={actual_ends}), Score={overall_score:.3f}"
+            )
+
+            if overall_score > best_score:
+                best_score = overall_score
+                best_threshold = thresh
+
+        print(
+            f"\n🎯 Recommended threshold: {best_threshold:.3f} (score: {best_score:.3f})"
+        )
+        print(f"This threshold balances detection sensitivity with accuracy.")
+
+        return True
+
+    except Exception as e:
+        print(f"❌ Error during optimization: {e}")
+        return False
 
 
 def train_new_model():
@@ -83,22 +166,24 @@ def test_real_time_detection():
         return False
 
     try:
-        # Initialize detectors
-        detector = StepDetector(model_path)
-        counter = SimpleStepCounter(model_path)
+        # Initialize detectors with optimized thresholds
+        # Based on threshold optimization results, using 0.15 for better balance
+        detector = StepDetector(model_path, start_threshold=0.15, end_threshold=0.15)
+        counter = SimpleStepCounter(model_path, threshold=0.15)
 
         print("✅ Detectors initialized successfully!")
+        print(f"Using optimized thresholds: start=0.15, end=0.15")
 
         # Test with sample data
         print("Testing with sample sensor readings...")
 
-        # Simulate some sensor readings
+        # Use more realistic sensor readings that might trigger step detection
         test_readings = [
-            (1.2, -0.5, 9.8, 0.1, 0.2, -0.1),
-            (2.1, 1.2, 8.9, -0.2, 0.5, 0.3),
-            (0.8, -1.1, 10.1, 0.3, -0.1, -0.2),
-            (1.5, 0.2, 9.5, 0.0, 0.1, 0.1),
-            (0.9, -0.8, 9.9, 0.2, -0.3, 0.0),
+            (1.2, -0.5, 9.8, 0.1, 0.2, -0.1),  # Normal standing
+            (2.5, 1.8, 8.2, -0.3, 0.8, 0.4),  # Step start motion
+            (0.3, -2.1, 11.1, 0.5, -0.2, -0.3),  # Step impact
+            (1.8, 0.4, 9.2, -0.1, 0.3, 0.2),  # Step transition
+            (0.7, -1.2, 10.3, 0.3, -0.4, 0.1),  # Step end motion
         ]
 
         for i, reading in enumerate(test_readings):
@@ -117,6 +202,48 @@ def test_real_time_detection():
         print(f"Total steps: {summary['total_steps']}")
         print(f"Simple counter: {counter.get_count()} steps")
 
+        # Also test with some real validation data if available
+        print("\n📊 Testing with real validation data...")
+        try:
+            # Load some real data for testing
+            df = load_step_data("data/raw")
+            if len(df) > 0:
+                train_features, val_features, train_labels, val_labels = (
+                    prepare_data_for_training(df)
+                )
+
+                # Test with first 10 samples from validation set
+                real_detected_steps = 0
+                for i in range(min(10, len(val_features))):
+                    reading = val_features[i]
+                    result = detector.process_reading(
+                        reading[0],
+                        reading[1],
+                        reading[2],  # accelerometer
+                        reading[3],
+                        reading[4],
+                        reading[5],  # gyroscope
+                    )
+
+                    if "completed_step" in result:
+                        real_detected_steps += 1
+
+                    if (
+                        result["predictions"]["start_prob"] > 0.05
+                        or result["predictions"]["end_prob"] > 0.05
+                    ):
+                        print(
+                            f"  Sample {i+1}: Start={result['predictions']['start_prob']:.4f}, End={result['predictions']['end_prob']:.4f}"
+                        )
+
+                print(
+                    f"Real data test: {real_detected_steps} steps detected from {min(10, len(val_features))} samples"
+                )
+            else:
+                print("No real data available for testing")
+        except Exception as e:
+            print(f"Could not test with real data: {e}")
+
         return True
 
     except Exception as e:
@@ -132,13 +259,13 @@ def start_api_server():
     try:
         import uvicorn
 
-        # Import the app directly to avoid circular imports
-        from src.step_detection.api.api import app
-
         print("Starting FastAPI server...")
         print("API documentation will be available at: http://localhost:8000/docs")
 
-        uvicorn.run(app, host="0.0.0.0", port=8000, reload=True)
+        # Use import string to enable reload functionality
+        uvicorn.run(
+            "src.step_detection.api.api:app", host="0.0.0.0", port=8000, reload=True
+        )
 
     except ImportError:
         print(
@@ -155,25 +282,28 @@ def main():
     print("Choose an option:")
     print("1. Train new model")
     print("2. Test real-time detection")
-    print("3. Start API server")
-    print("4. Exit")
+    print("3. Optimize detection thresholds")
+    print("4. Start API server")
+    print("5. Exit")
 
     while True:
         try:
-            choice = input("\nEnter your choice (1-4): ").strip()
+            choice = input("\nEnter your choice (1-5): ").strip()
 
             if choice == "1":
                 train_new_model()
             elif choice == "2":
                 test_real_time_detection()
             elif choice == "3":
+                optimize_thresholds()
+            elif choice == "4":
                 start_api_server()
                 break
-            elif choice == "4":
+            elif choice == "5":
                 print("👋 Goodbye!")
                 break
             else:
-                print("❌ Invalid choice. Please enter 1-4.")
+                print("❌ Invalid choice. Please enter 1-5.")
 
         except KeyboardInterrupt:
             print("\n👋 Goodbye!")

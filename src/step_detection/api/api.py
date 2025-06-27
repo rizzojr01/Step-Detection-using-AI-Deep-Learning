@@ -3,10 +3,12 @@ FastAPI Step Detection API
 REST API for real-time step detection using TensorFlow models.
 """
 
+import json
 import os
 from typing import Dict, Optional
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from ..core.detector import SimpleStepCounter, StepDetector, load_model_info
@@ -48,6 +50,15 @@ app = FastAPI(
     version="1.0.0",
 )
 
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # In production, specify actual origins
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 # Global variables for detectors
 detector: Optional[StepDetector] = None
 counter: Optional[SimpleStepCounter] = None
@@ -87,6 +98,7 @@ async def root():
             "reset_count": "POST /reset_count - Reset step count",
             "session_summary": "GET /session_summary - Get session summary",
             "model_info": "GET /model_info - Get model information",
+            "websocket": "WS /ws/realtime - Real-time step detection via WebSocket",
         },
     }
 
@@ -183,6 +195,101 @@ async def get_model_info():
             else None
         ),
     }
+
+
+@app.websocket("/ws/realtime")
+async def websocket_endpoint(websocket: WebSocket):
+    """WebSocket endpoint for real-time step detection."""
+    await websocket.accept()
+
+    if detector is None:
+        await websocket.send_text(
+            json.dumps({"error": "Model not loaded", "status": "error"})
+        )
+        await websocket.close(code=1003)
+        return
+
+    try:
+        while True:
+            # Receive sensor data from client
+            data = await websocket.receive_text()
+
+            try:
+                sensor_data = json.loads(data)
+
+                # Validate required fields
+                required_fields = [
+                    "accel_x",
+                    "accel_y",
+                    "accel_z",
+                    "gyro_x",
+                    "gyro_y",
+                    "gyro_z",
+                ]
+                if not all(field in sensor_data for field in required_fields):
+                    await websocket.send_text(
+                        json.dumps(
+                            {
+                                "error": "Missing required sensor data fields",
+                                "required": required_fields,
+                                "status": "error",
+                            }
+                        )
+                    )
+                    continue
+
+                # Process the reading
+                result = detector.process_reading(
+                    sensor_data["accel_x"],
+                    sensor_data["accel_y"],
+                    sensor_data["accel_z"],
+                    sensor_data["gyro_x"],
+                    sensor_data["gyro_y"],
+                    sensor_data["gyro_z"],
+                )
+
+                # Log step detection details
+                start_prob = result["predictions"]["start_prob"]
+                end_prob = result["predictions"]["end_prob"]
+                step_start = result["step_start"]
+                step_end = result["step_end"]
+                step_count = result["step_count"]
+
+                # Clean logging with emojis
+                if step_start or step_end or "completed_step" in result:
+                    print(f"🦶 Step detected! Count: {step_count}")
+                else:
+                    print(f"⚪ No step | Count: {step_count}")
+
+                # Send response back to client
+                response = {
+                    "step_start": bool(result["step_start"]),
+                    "step_end": bool(result["step_end"]),
+                    "start_probability": float(result["predictions"]["start_prob"]),
+                    "end_probability": float(result["predictions"]["end_prob"]),
+                    "step_count": int(result["step_count"]),
+                    "timestamp": str(result["timestamp"]),
+                    "status": "success",
+                }
+
+                await websocket.send_text(json.dumps(response))
+
+            except json.JSONDecodeError:
+                await websocket.send_text(
+                    json.dumps({"error": "Invalid JSON format", "status": "error"})
+                )
+            except Exception as e:
+                await websocket.send_text(
+                    json.dumps(
+                        {"error": f"Processing error: {str(e)}", "status": "error"}
+                    )
+                )
+
+    except WebSocketDisconnect:
+        print("WebSocket client disconnected")
+    except Exception as e:
+        print(f"WebSocket error: {e}")
+        await websocket.close(code=1011)
 
 
 @app.get("/health")
