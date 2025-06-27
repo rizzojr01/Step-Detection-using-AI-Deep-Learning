@@ -20,27 +20,27 @@ def create_cnn_model(input_shape=(6,), num_classes=3):
         layers.Flatten(),
         layers.Dense(num_classes, activation="softmax"),
     ])
-    
+
     model.compile(
         optimizer="adam",
         loss="sparse_categorical_crossentropy",
         metrics=["accuracy"]
     )
-    
+
     return model
 ```
 
 ### Architecture Details
 
-| Layer | Type | Parameters | Output Shape |
-|-------|------|------------|--------------|
-| Input | Input | - | (None, 6) |
-| Reshape | Reshape | - | (None, 1, 6) |
-| Conv1D #1 | Conv1D | 32 filters, kernel=1 | (None, 1, 32) |
-| MaxPool1D | MaxPooling1D | pool_size=1 | (None, 1, 32) |
-| Conv1D #2 | Conv1D | 64 filters, kernel=1 | (None, 1, 64) |
-| Flatten | Flatten | - | (None, 64) |
-| Dense | Dense | 3 units, softmax | (None, 3) |
+| Layer     | Type         | Parameters           | Output Shape  |
+| --------- | ------------ | -------------------- | ------------- |
+| Input     | Input        | -                    | (None, 6)     |
+| Reshape   | Reshape      | -                    | (None, 1, 6)  |
+| Conv1D #1 | Conv1D       | 32 filters, kernel=1 | (None, 1, 32) |
+| MaxPool1D | MaxPooling1D | pool_size=1          | (None, 1, 32) |
+| Conv1D #2 | Conv1D       | 64 filters, kernel=1 | (None, 1, 64) |
+| Flatten   | Flatten      | -                    | (None, 64)    |
+| Dense     | Dense        | 3 units, softmax     | (None, 3)     |
 
 **Total Parameters**: ~2,000-3,000 trainable parameters
 
@@ -59,11 +59,11 @@ accel_x,accel_y,accel_z,gyro_x,gyro_y,gyro_z,Label
 
 ### Label Classes
 
-| Class | Label | Description | Expected Count |
-|-------|-------|-------------|----------------|
-| 0 | No Label | Normal movement, not a step | ~95% of data |
-| 1 | start | Beginning of a step motion | ~2.5% of data |
-| 2 | end | End of a step motion | ~2.5% of data |
+| Class | Label    | Description                 | Expected Count |
+| ----- | -------- | --------------------------- | -------------- |
+| 0     | No Label | Normal movement, not a step | ~95% of data   |
+| 1     | start    | Beginning of a step motion  | ~2.5% of data  |
+| 2     | end      | End of a step motion        | ~2.5% of data  |
 
 ### Data Preprocessing
 
@@ -79,11 +79,11 @@ def prepare_data_for_training(df, test_size=0.2, random_state=42):
     # Extract features and labels
     features = df.iloc[:, :6].values.astype(np.float32)
     labels = df.iloc[:, 6].values
-    
+
     # Convert labels to numeric
     label_mapping = {"No Label": 0, "start": 1, "end": 2}
     numeric_labels = np.array([label_mapping[label] for label in labels])
-    
+
     # Split data with stratification
     return train_test_split(
         features, numeric_labels,
@@ -148,6 +148,7 @@ history = train_model(
 The training includes several callbacks:
 
 1. **EarlyStopping**: Stops training when validation loss stops improving
+
    - Monitor: `val_loss`
    - Patience: 10 epochs
    - Restore best weights: True
@@ -196,13 +197,13 @@ save_model_and_metadata(
 
 ### Key Hyperparameters
 
-| Parameter | Default | Range | Impact |
-|-----------|---------|-------|--------|
-| filters (Conv1D #1) | 32 | 16-64 | Model capacity |
-| filters (Conv1D #2) | 64 | 32-128 | Feature extraction |
-| learning_rate | 0.001 | 1e-4 to 1e-2 | Convergence speed |
-| batch_size | 32 | 16-128 | Training stability |
-| dropout | 0.0 | 0.0-0.5 | Regularization |
+| Parameter           | Default | Range        | Impact             |
+| ------------------- | ------- | ------------ | ------------------ |
+| filters (Conv1D #1) | 32      | 16-64        | Model capacity     |
+| filters (Conv1D #2) | 64      | 32-128       | Feature extraction |
+| learning_rate       | 0.001   | 1e-4 to 1e-2 | Convergence speed  |
+| batch_size          | 32      | 16-128       | Training stability |
+| dropout             | 0.0     | 0.0-0.5      | Regularization     |
 
 ### Tuning Process
 
@@ -218,28 +219,28 @@ save_model_and_metadata(
 def create_advanced_cnn_model(input_shape=(6,), num_classes=3, dropout=0.2):
     model = keras.Sequential([
         layers.Reshape((1, input_shape[0]), input_shape=input_shape),
-        
+
         # First block
         layers.Conv1D(filters=64, kernel_size=1, activation="relu"),
         layers.BatchNormalization(),
         layers.Dropout(dropout),
-        
+
         # Second block
         layers.Conv1D(filters=128, kernel_size=1, activation="relu"),
         layers.BatchNormalization(),
         layers.Dropout(dropout),
-        
+
         # Third block
         layers.Conv1D(filters=64, kernel_size=1, activation="relu"),
         layers.GlobalMaxPooling1D(),
         layers.Dropout(dropout),
-        
+
         # Output
         layers.Dense(32, activation="relu"),
         layers.Dropout(dropout),
         layers.Dense(num_classes, activation="softmax"),
     ])
-    
+
     return model
 ```
 
@@ -263,28 +264,28 @@ python main.py
 def optimize_thresholds(model, val_features, val_labels):
     predictions = model.predict(val_features)
     thresholds = [0.01, 0.02, 0.03, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3]
-    
+
     best_threshold = 0.03
     best_score = 0
-    
+
     for thresh in thresholds:
         # Count predictions above threshold
         start_preds = (predictions[:, 1] > thresh).sum()
         end_preds = (predictions[:, 2] > thresh).sum()
-        
+
         # Count actual labels
         actual_starts = (val_labels == 1).sum()
         actual_ends = (val_labels == 2).sum()
-        
+
         # Calculate score
         start_score = min(start_preds, actual_starts) / max(start_preds, actual_starts, 1)
         end_score = min(end_preds, actual_ends) / max(end_preds, actual_ends, 1)
         overall_score = (start_score + end_score) / 2
-        
+
         if overall_score > best_score:
             best_score = overall_score
             best_threshold = thresh
-    
+
     return best_threshold, best_score
 ```
 
@@ -310,23 +311,23 @@ def comprehensive_evaluation(model, val_features, val_labels):
     # Standard classification metrics
     predictions = model.predict(val_features)
     pred_classes = np.argmax(predictions, axis=1)
-    
+
     accuracy = accuracy_score(val_labels, pred_classes)
     report = classification_report(val_labels, pred_classes)
     confusion = confusion_matrix(val_labels, pred_classes)
-    
+
     # Step detection specific metrics
     detector = StepDetector(model, threshold=0.15)
     detected_steps = 0
     actual_steps = count_actual_steps(val_labels)
-    
+
     for features in val_features:
         result = detector.process_reading(*features)
         if result.get('completed_step'):
             detected_steps += 1
-    
+
     step_accuracy = detected_steps / actual_steps if actual_steps > 0 else 0
-    
+
     return {
         'classification_accuracy': accuracy,
         'classification_report': report,
@@ -342,18 +343,21 @@ def comprehensive_evaluation(model, val_features, val_labels):
 ### Common Issues
 
 1. **Low Accuracy (<80%)**
+
    - Check data quality and labeling
    - Increase model capacity
    - Adjust learning rate
    - Add more training data
 
 2. **Overfitting**
+
    - Add dropout layers
    - Reduce model capacity
    - Increase regularization
    - Use early stopping
 
 3. **Underfitting**
+
    - Increase model capacity
    - Reduce regularization
    - Check for data leakage
@@ -368,12 +372,14 @@ def comprehensive_evaluation(model, val_features, val_labels):
 ### Performance Tips
 
 1. **Data Quality**
+
    - Ensure consistent sensor calibration
    - Remove outliers and noise
    - Balance class distribution
    - Validate label quality
 
 2. **Model Architecture**
+
    - Start simple, add complexity gradually
    - Use batch normalization for stability
    - Consider attention mechanisms
@@ -403,12 +409,12 @@ def create_transfer_model(base_model_path, num_classes=3):
     """Create model using transfer learning."""
     base_model = tf.keras.models.load_model(base_model_path)
     base_model.trainable = False
-    
+
     model = keras.Sequential([
         base_model.layers[:-1],  # Remove last layer
         layers.Dense(num_classes, activation='softmax')
     ])
-    
+
     return model
 ```
 
@@ -418,13 +424,13 @@ def create_transfer_model(base_model_path, num_classes=3):
 def create_ensemble(model_paths, weights=None):
     """Create ensemble of multiple models."""
     models = [tf.keras.models.load_model(path) for path in model_paths]
-    
+
     def ensemble_predict(features):
         predictions = [model.predict(features) for model in models]
         if weights:
             weighted_preds = [pred * w for pred, w in zip(predictions, weights)]
             return np.mean(weighted_preds, axis=0)
         return np.mean(predictions, axis=0)
-    
+
     return ensemble_predict
 ```

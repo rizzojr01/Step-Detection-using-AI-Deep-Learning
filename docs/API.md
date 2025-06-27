@@ -21,6 +21,7 @@ Currently, no authentication is required. For production deployment, consider ad
 Get API information and available endpoints.
 
 **Response:**
+
 ```json
 {
   "message": "Step Detection API",
@@ -42,6 +43,7 @@ Get API information and available endpoints.
 Detect steps from a single sensor reading.
 
 **Request Body:**
+
 ```json
 {
   "accel_x": 1.2,
@@ -54,18 +56,20 @@ Detect steps from a single sensor reading.
 ```
 
 **Response:**
+
 ```json
 {
   "step_start": false,
   "step_end": false,
   "start_probability": 0.0024,
-  "end_probability": 0.0020,
+  "end_probability": 0.002,
   "step_count": 0,
   "timestamp": "2025-06-27T14:20:19.586914"
 }
 ```
 
 **Status Codes:**
+
 - `200`: Success
 - `503`: Model not loaded
 - `500`: Processing error
@@ -75,6 +79,7 @@ Detect steps from a single sensor reading.
 Get the current step count from the simple counter.
 
 **Response:**
+
 ```json
 {
   "step_count": 42,
@@ -90,6 +95,7 @@ Get the current step count from the simple counter.
 Reset both the step detector and simple counter.
 
 **Response:**
+
 ```json
 {
   "message": "Step count reset",
@@ -102,6 +108,7 @@ Reset both the step detector and simple counter.
 Get a summary of the current detection session.
 
 **Response:**
+
 ```json
 {
   "total_readings": 150,
@@ -119,6 +126,7 @@ Get a summary of the current detection session.
 Get information about the loaded model.
 
 **Response:**
+
 ```json
 {
   "model_info": {
@@ -141,6 +149,7 @@ Get information about the loaded model.
 Health check endpoint.
 
 **Response:**
+
 ```json
 {
   "status": "healthy",
@@ -156,11 +165,13 @@ Health check endpoint.
 Real-time step detection via WebSocket connection.
 
 **Connection URL:**
+
 ```
 ws://localhost:8000/ws/realtime
 ```
 
 **Send Message Format:**
+
 ```json
 {
   "accel_x": 1.2,
@@ -173,12 +184,13 @@ ws://localhost:8000/ws/realtime
 ```
 
 **Receive Message Format:**
+
 ```json
 {
   "step_start": false,
   "step_end": false,
   "start_probability": 0.0024,
-  "end_probability": 0.0020,
+  "end_probability": 0.002,
   "step_count": 0,
   "timestamp": "2025-06-27T14:20:19.586914",
   "status": "success"
@@ -186,6 +198,7 @@ ws://localhost:8000/ws/realtime
 ```
 
 **Error Message Format:**
+
 ```json
 {
   "error": "Missing required sensor data fields",
@@ -198,29 +211,30 @@ ws://localhost:8000/ws/realtime
 
 ### SensorReading
 
-| Field | Type | Description | Range |
-|-------|------|-------------|-------|
-| accel_x | float | X-axis acceleration (m/s²) | -50 to 50 |
-| accel_y | float | Y-axis acceleration (m/s²) | -50 to 50 |
-| accel_z | float | Z-axis acceleration (m/s²) | -50 to 50 |
-| gyro_x | float | X-axis angular velocity (rad/s) | -10 to 10 |
-| gyro_y | float | Y-axis angular velocity (rad/s) | -10 to 10 |
-| gyro_z | float | Z-axis angular velocity (rad/s) | -10 to 10 |
+| Field   | Type  | Description                     | Range     |
+| ------- | ----- | ------------------------------- | --------- |
+| accel_x | float | X-axis acceleration (m/s²)      | -50 to 50 |
+| accel_y | float | Y-axis acceleration (m/s²)      | -50 to 50 |
+| accel_z | float | Z-axis acceleration (m/s²)      | -50 to 50 |
+| gyro_x  | float | X-axis angular velocity (rad/s) | -10 to 10 |
+| gyro_y  | float | Y-axis angular velocity (rad/s) | -10 to 10 |
+| gyro_z  | float | Z-axis angular velocity (rad/s) | -10 to 10 |
 
 ### StepDetectionResponse
 
-| Field | Type | Description |
-|-------|------|-------------|
-| step_start | boolean | Whether a step start was detected |
-| step_end | boolean | Whether a step end was detected |
-| start_probability | float | Probability of step start (0-1) |
-| end_probability | float | Probability of step end (0-1) |
-| step_count | integer | Total steps detected in session |
-| timestamp | string | ISO 8601 timestamp |
+| Field             | Type    | Description                       |
+| ----------------- | ------- | --------------------------------- |
+| step_start        | boolean | Whether a step start was detected |
+| step_end          | boolean | Whether a step end was detected   |
+| start_probability | float   | Probability of step start (0-1)   |
+| end_probability   | float   | Probability of step end (0-1)     |
+| step_count        | integer | Total steps detected in session   |
+| timestamp         | string  | ISO 8601 timestamp                |
 
 ## Rate Limits
 
 No rate limits are currently enforced. For production:
+
 - Consider implementing rate limiting
 - Monitor resource usage
 - Set appropriate timeouts
@@ -229,12 +243,12 @@ No rate limits are currently enforced. For production:
 
 ### Common Error Codes
 
-| Code | Description | Solution |
-|------|-------------|----------|
-| 503 | Model not loaded | Train and load a model |
-| 500 | Processing error | Check input data format |
-| 400 | Bad request | Validate request body |
-| 403 | Forbidden (WebSocket) | Check endpoint URL |
+| Code | Description           | Solution                |
+| ---- | --------------------- | ----------------------- |
+| 503  | Model not loaded      | Train and load a model  |
+| 500  | Processing error      | Check input data format |
+| 400  | Bad request           | Validate request body   |
+| 403  | Forbidden (WebSocket) | Check endpoint URL      |
 
 ### Error Response Format
 
@@ -286,7 +300,7 @@ async def test_websocket():
             "gyro_y": 0.2,
             "gyro_z": -0.1
         }))
-        
+
         # Receive response
         response = await websocket.recv()
         print(json.loads(response))
@@ -298,55 +312,59 @@ asyncio.run(test_websocket())
 
 ```javascript
 // REST API
-fetch('http://localhost:8000/detect_step', {
-    method: 'POST',
-    headers: {
-        'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-        accel_x: 1.2,
-        accel_y: -0.5,
-        accel_z: 9.8,
-        gyro_x: 0.1,
-        gyro_y: 0.2,
-        gyro_z: -0.1
-    })
+fetch("http://localhost:8000/detect_step", {
+  method: "POST",
+  headers: {
+    "Content-Type": "application/json",
+  },
+  body: JSON.stringify({
+    accel_x: 1.2,
+    accel_y: -0.5,
+    accel_z: 9.8,
+    gyro_x: 0.1,
+    gyro_y: 0.2,
+    gyro_z: -0.1,
+  }),
 })
-.then(response => response.json())
-.then(data => console.log(data));
+  .then((response) => response.json())
+  .then((data) => console.log(data));
 ```
 
 ### JavaScript (WebSocket)
 
 ```javascript
-const ws = new WebSocket('ws://localhost:8000/ws/realtime');
+const ws = new WebSocket("ws://localhost:8000/ws/realtime");
 
-ws.onopen = function() {
-    // Send data
-    ws.send(JSON.stringify({
-        accel_x: 1.2,
-        accel_y: -0.5,
-        accel_z: 9.8,
-        gyro_x: 0.1,
-        gyro_y: 0.2,
-        gyro_z: -0.1
-    }));
+ws.onopen = function () {
+  // Send data
+  ws.send(
+    JSON.stringify({
+      accel_x: 1.2,
+      accel_y: -0.5,
+      accel_z: 9.8,
+      gyro_x: 0.1,
+      gyro_y: 0.2,
+      gyro_z: -0.1,
+    })
+  );
 };
 
-ws.onmessage = function(event) {
-    const data = JSON.parse(event.data);
-    console.log('Received:', data);
+ws.onmessage = function (event) {
+  const data = JSON.parse(event.data);
+  console.log("Received:", data);
 };
 ```
 
 ## Performance Considerations
 
 ### REST API
+
 - **Latency**: ~5-20ms per request
 - **Throughput**: ~100-500 requests/second
 - **Memory**: ~50MB base + model size
 
 ### WebSocket API
+
 - **Latency**: ~1-5ms per message
 - **Throughput**: ~1000+ messages/second
 - **Memory**: Same as REST + connection overhead
@@ -354,6 +372,7 @@ ws.onmessage = function(event) {
 ## Interactive Documentation
 
 When the API server is running, visit:
+
 ```
 http://localhost:8000/docs
 ```

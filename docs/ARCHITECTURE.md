@@ -86,7 +86,7 @@ class StepDetectorInterface:
 class StepDetector(StepDetectorInterface):
     def __init__(self, model_path: str):
         self.model = tf.keras.models.load_model(model_path)
-    
+
     def process_reading(self, accel_x, accel_y, accel_z, gyro_x, gyro_y, gyro_z):
         # Implementation details
 ```
@@ -109,11 +109,11 @@ Software entities are open for extension but closed for modification:
 class BaseStepDetector:
     def __init__(self, model_path: str):
         self.model = self.load_model(model_path)
-    
+
     def load_model(self, path: str):
         """Override in subclasses for different model types"""
         return tf.keras.models.load_model(path)
-    
+
     def preprocess(self, data):
         """Override for custom preprocessing"""
         return data
@@ -165,6 +165,7 @@ Data     Management   Error Check   State Update    Thresholding  Broadcast   Sh
 **Classes**:
 
 1. **StepDetector**
+
    - Responsibilities: Real-time step detection, session management
    - Dependencies: TensorFlow model, numpy
    - Key Methods:
@@ -181,6 +182,7 @@ Data     Management   Error Check   State Update    Thresholding  Broadcast   Sh
      - `reset()`: Reset counter
 
 **Design Patterns**:
+
 - **State Pattern**: Managing step detection state (start, in-progress, end)
 - **Strategy Pattern**: Different detection strategies (threshold-based, ML-based)
 
@@ -191,11 +193,13 @@ Data     Management   Error Check   State Update    Thresholding  Broadcast   Sh
 **Functions**:
 
 1. **create_cnn_model()**
+
    - Creates and compiles CNN architecture
    - Configurable input shape and classes
    - Returns compiled Keras model
 
 2. **train_model()**
+
    - Handles model training with callbacks
    - Early stopping and learning rate scheduling
    - Returns training history
@@ -206,6 +210,7 @@ Data     Management   Error Check   State Update    Thresholding  Broadcast   Sh
    - Returns evaluation results
 
 **Design Patterns**:
+
 - **Factory Pattern**: Model creation
 - **Builder Pattern**: Complex model configuration
 
@@ -216,6 +221,7 @@ Data     Management   Error Check   State Update    Thresholding  Broadcast   Sh
 **Functions**:
 
 1. **load_step_data()**
+
    - Loads and combines CSV files
    - Data validation and cleaning
    - Returns pandas DataFrame
@@ -226,6 +232,7 @@ Data     Management   Error Check   State Update    Thresholding  Broadcast   Sh
    - Data type optimization
 
 **Design Patterns**:
+
 - **Pipeline Pattern**: Data processing pipeline
 - **Adapter Pattern**: Different data format handling
 
@@ -236,6 +243,7 @@ Data     Management   Error Check   State Update    Thresholding  Broadcast   Sh
 **Components**:
 
 1. **FastAPI Application**
+
    - RESTful endpoints for step detection
    - WebSocket for real-time communication
    - Request/response models with Pydantic
@@ -246,6 +254,7 @@ Data     Management   Error Check   State Update    Thresholding  Broadcast   Sh
    - Error handling
 
 **Design Patterns**:
+
 - **Facade Pattern**: Simplified interface to complex subsystem
 - **Observer Pattern**: WebSocket event handling
 
@@ -341,11 +350,11 @@ services:
   api-1:
     image: step-detection:latest
     ports: ["8001:8000"]
-  
+
   api-2:
     image: step-detection:latest
     ports: ["8002:8000"]
-  
+
   load-balancer:
     image: nginx:alpine
     ports: ["8000:80"]
@@ -359,12 +368,12 @@ services:
 class ModelManager:
     _instance = None
     _model = None
-    
+
     def __new__(cls):
         if cls._instance is None:
             cls._instance = super().__new__(cls)
         return cls._instance
-    
+
     def get_model(self, model_path: str):
         if self._model is None:
             self._model = tf.keras.models.load_model(model_path)
@@ -380,12 +389,12 @@ from concurrent.futures import ThreadPoolExecutor
 class AsyncStepDetector:
     def __init__(self):
         self.executor = ThreadPoolExecutor(max_workers=4)
-    
+
     async def process_reading_async(self, *args):
         loop = asyncio.get_event_loop()
         result = await loop.run_in_executor(
-            self.executor, 
-            self.detector.process_reading, 
+            self.executor,
+            self.detector.process_reading,
             *args
         )
         return result
@@ -473,11 +482,11 @@ class TestE2E:
     def test_training_to_inference_pipeline(self):
         # Train model
         model = train_model(training_data)
-        
+
         # Save and load model
         save_model(model, "test_model.keras")
         detector = StepDetector("test_model.keras")
-        
+
         # Test inference
         result = detector.process_reading(*test_data)
         assert result is not None
@@ -559,7 +568,7 @@ class StepEvent:
 class EventStore:
     def append(self, event: StepEvent):
         # Store event
-        
+
     def get_events(self, session_id: str) -> List[StepEvent]:
         # Retrieve events
 ```
@@ -571,7 +580,7 @@ class EventStore:
 class StepDetectionCommand:
     def execute(self, sensor_data: SensorReading):
         # Write operation
-        
+
 class StepDetectionQuery:
     def get_session_summary(self, session_id: str):
         # Read operation

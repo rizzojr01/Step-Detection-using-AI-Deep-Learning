@@ -9,16 +9,19 @@ This guide covers deploying the Step Detection API in various environments, from
 ### 1. Local Development
 
 **Quick Start:**
+
 ```bash
 python main.py  # Choose option 4
 ```
 
 **Manual Start:**
+
 ```bash
 uvicorn src.step_detection.api.api:app --host 0.0.0.0 --port 8000 --reload
 ```
 
 **Configuration:**
+
 - Host: `0.0.0.0`
 - Port: `8000`
 - Reload: `True` (development only)
@@ -26,11 +29,13 @@ uvicorn src.step_detection.api.api:app --host 0.0.0.0 --port 8000 --reload
 ### 2. Production Server
 
 **Basic Production:**
+
 ```bash
 uvicorn src.step_detection.api.api:app --host 0.0.0.0 --port 8000 --workers 4
 ```
 
 **With Gunicorn:**
+
 ```bash
 gunicorn src.step_detection.api.api:app -w 4 -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:8000
 ```
@@ -88,7 +93,7 @@ docker run -d \
 #### Docker Compose
 
 ```yaml
-version: '3.8'
+version: "3.8"
 
 services:
   step-detection-api:
@@ -103,7 +108,7 @@ services:
       - MODEL_PATH=models/step_detection_model.keras
       - LOG_LEVEL=INFO
     restart: unless-stopped
-    
+
   nginx:
     image: nginx:alpine
     ports:
@@ -122,11 +127,13 @@ services:
 #### AWS EC2
 
 1. **Launch EC2 Instance**
+
    - Amazon Linux 2 or Ubuntu 20.04
    - t3.medium or larger (2 vCPU, 4GB RAM minimum)
    - Security group allowing port 8000
 
 2. **Setup Script**
+
 ```bash
 #!/bin/bash
 # install-step-detection.sh
@@ -153,6 +160,7 @@ docker-compose up -d
 ```
 
 3. **Security Configuration**
+
 ```bash
 # Configure firewall
 sudo ufw allow 22    # SSH
@@ -168,6 +176,7 @@ sudo certbot --nginx -d your-domain.com
 #### Google Cloud Platform
 
 1. **Cloud Run Deployment**
+
 ```bash
 # Build and push to Container Registry
 docker tag step-detection gcr.io/your-project/step-detection
@@ -185,6 +194,7 @@ gcloud run deploy step-detection \
 ```
 
 2. **App Engine Deployment**
+
 ```yaml
 # app.yaml
 runtime: python39
@@ -314,18 +324,18 @@ server {
 
     location / {
         limit_req zone=api burst=20 nodelay;
-        
+
         proxy_pass http://step_detection;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
-        
+
         # WebSocket support
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection "upgrade";
-        
+
         # Timeouts
         proxy_connect_timeout 60s;
         proxy_send_timeout 60s;
@@ -354,16 +364,16 @@ async def health_check():
         "disk_space": get_disk_space(),
         "timestamp": datetime.utcnow().isoformat()
     }
-    
+
     # Determine overall status
     status = "healthy" if all([
         checks["model_loaded"],
         checks["memory_usage"] < 90,  # Less than 90% memory usage
         checks["disk_space"] > 1024   # More than 1GB disk space
     ]) else "unhealthy"
-    
+
     checks["status"] = status
-    
+
     return checks
 ```
 
@@ -401,11 +411,11 @@ logger = structlog.get_logger()
 @app.middleware("http")
 async def logging_middleware(request: Request, call_next):
     start_time = time.time()
-    
+
     response = await call_next(request)
-    
+
     process_time = time.time() - start_time
-    
+
     logger.info(
         "request_processed",
         method=request.method,
@@ -415,7 +425,7 @@ async def logging_middleware(request: Request, call_next):
         user_agent=request.headers.get("user-agent"),
         remote_addr=request.client.host
     )
-    
+
     return response
 ```
 
@@ -502,7 +512,7 @@ def convert_to_tflite(model_path, output_path):
     converter = tf.lite.TFLiteConverter.from_saved_model(model_path)
     converter.optimizations = [tf.lite.Optimize.DEFAULT]
     tflite_model = converter.convert()
-    
+
     with open(output_path, 'wb') as f:
         f.write(tflite_model)
 
@@ -514,9 +524,9 @@ def quantized_conversion(model_path, output_path):
     converter.target_spec.supported_ops = [tf.lite.OpsSet.TFLITE_BUILTINS_INT8]
     converter.inference_input_type = tf.int8
     converter.inference_output_type = tf.int8
-    
+
     tflite_model = converter.convert()
-    
+
     with open(output_path, 'wb') as f:
         f.write(tflite_model)
 ```
@@ -544,7 +554,7 @@ def get_cached_prediction(sensor_data):
 
 ```yaml
 # docker-compose.yml for multiple instances
-version: '3.8'
+version: "3.8"
 
 services:
   step-detection-api-1:
@@ -575,16 +585,19 @@ services:
 ### Common Issues
 
 1. **High Memory Usage**
+
    - Monitor TensorFlow memory allocation
    - Use model quantization
    - Implement connection pooling
 
 2. **Slow Response Times**
+
    - Profile model inference time
    - Add request caching
    - Optimize data preprocessing
 
 3. **WebSocket Connection Issues**
+
    - Check firewall settings
    - Verify WebSocket support in proxy
    - Monitor connection limits
@@ -605,7 +618,7 @@ async def debug_middleware(request: Request, call_next):
         print(f"Request: {request.method} {request.url}")
         print(f"Headers: {dict(request.headers)}")
         print(f"Body: {body}")
-    
+
     response = await call_next(request)
     return response
 ```

@@ -87,13 +87,13 @@ detector = StepDetector("models/step_detection_model.keras")
 # Simulate walking data (3 steps)
 walking_data = [
     # Step 1: Start
-    {"accel_x": 1.2, "accel_y": -0.3, "accel_z": 9.8, 
+    {"accel_x": 1.2, "accel_y": -0.3, "accel_z": 9.8,
      "gyro_x": 0.1, "gyro_y": 0.0, "gyro_z": -0.1},
-    
-    # Step 1: End  
+
+    # Step 1: End
     {"accel_x": -0.8, "accel_y": 0.2, "accel_z": 9.9,
      "gyro_x": -0.1, "gyro_y": 0.1, "gyro_z": 0.0},
-    
+
     # Step 2: Start
     {"accel_x": 1.1, "accel_y": -0.4, "accel_z": 9.7,
      "gyro_x": 0.2, "gyro_y": -0.1, "gyro_z": -0.2},
@@ -143,18 +143,18 @@ import json
 
 async def test_websocket():
     uri = "ws://localhost:8000/ws/realtime"
-    
+
     async with websockets.connect(uri) as websocket:
         print("🔌 Connected to WebSocket")
-        
+
         # Send sensor data
         data = {
             "accel_x": 1.2, "accel_y": -0.5, "accel_z": 9.8,
             "gyro_x": 0.1, "gyro_y": 0.2, "gyro_z": -0.1
         }
-        
+
         await websocket.send(json.dumps(data))
-        
+
         # Receive response
         response = await websocket.recv()
         result = json.loads(response)
@@ -171,6 +171,7 @@ asyncio.run(test_websocket())
 **Problem**: `ModuleNotFoundError: No module named 'src'`
 
 **Solution**:
+
 ```bash
 # Install in development mode
 pip install -e .
@@ -184,6 +185,7 @@ export PYTHONPATH="${PYTHONPATH}:$(pwd)"
 **Problem**: `FileNotFoundError: models/step_detection_model.keras`
 
 **Solution**:
+
 ```bash
 # Download model
 python scripts/download_model.py
@@ -197,6 +199,7 @@ python main.py  # Choose option 1
 **Problem**: TensorFlow compatibility issues
 
 **Solution**:
+
 ```bash
 # For Apple Silicon Macs
 pip install tensorflow-macos tensorflow-metal
@@ -213,6 +216,7 @@ pip install tensorflow-cpu
 **Problem**: `OSError: [Errno 48] Address already in use`
 
 **Solution**:
+
 ```bash
 # Find process using port 8000
 lsof -i :8000
@@ -229,16 +233,19 @@ uvicorn src.step_detection.api.api:app --port 8001
 Now that you have the system running:
 
 1. 📚 **Read the Documentation**:
+
    - [API Reference](API.md) - Detailed API docs
    - [Training Guide](TRAINING.md) - Train custom models
    - [Architecture](ARCHITECTURE.md) - System design
 
 2. 🧪 **Explore Examples**:
+
    - Check `notebooks/` for interactive examples
    - Run `tests/` to see testing patterns
    - Look at `scripts/` for utility tools
 
 3. 🚀 **Build Your Application**:
+
    - Integrate with your mobile app
    - Create a web dashboard
    - Set up monitoring and alerts

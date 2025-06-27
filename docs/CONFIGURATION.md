@@ -75,12 +75,12 @@ config/
 
 ### 🤖 Model Configuration
 
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `model.path` | string | `models/step_detection_model.keras` | Path to trained model |
-| `model.input_shape` | array | `[6]` | Input tensor shape |
-| `model.num_classes` | int | `3` | Number of output classes |
-| `model.confidence_threshold` | float | `0.5` | Minimum confidence for detection |
+| Parameter                    | Type   | Default                             | Description                      |
+| ---------------------------- | ------ | ----------------------------------- | -------------------------------- |
+| `model.path`                 | string | `models/step_detection_model.keras` | Path to trained model            |
+| `model.input_shape`          | array  | `[6]`                               | Input tensor shape               |
+| `model.num_classes`          | int    | `3`                                 | Number of output classes         |
+| `model.confidence_threshold` | float  | `0.5`                               | Minimum confidence for detection |
 
 ```json
 {
@@ -100,13 +100,13 @@ config/
 
 ### 🚶‍♂️ Step Detection Configuration
 
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `detection.start_threshold` | float | `0.7` | Threshold for step start detection |
-| `detection.end_threshold` | float | `0.6` | Threshold for step end detection |
-| `detection.min_step_interval` | float | `0.3` | Minimum time between steps (seconds) |
-| `detection.max_step_duration` | float | `2.0` | Maximum step duration (seconds) |
-| `detection.smoothing_window` | int | `3` | Number of readings for smoothing |
+| Parameter                     | Type  | Default | Description                          |
+| ----------------------------- | ----- | ------- | ------------------------------------ |
+| `detection.start_threshold`   | float | `0.7`   | Threshold for step start detection   |
+| `detection.end_threshold`     | float | `0.6`   | Threshold for step end detection     |
+| `detection.min_step_interval` | float | `0.3`   | Minimum time between steps (seconds) |
+| `detection.max_step_duration` | float | `2.0`   | Maximum step duration (seconds)      |
+| `detection.smoothing_window`  | int   | `3`     | Number of readings for smoothing     |
 
 ```json
 {
@@ -130,13 +130,13 @@ config/
 
 ### 🌐 API Configuration
 
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `api.host` | string | `0.0.0.0` | Server host address |
-| `api.port` | int | `8000` | Server port |
-| `api.reload` | bool | `false` | Auto-reload on changes |
-| `api.workers` | int | `1` | Number of worker processes |
-| `api.cors_origins` | array | `[]` | Allowed CORS origins |
+| Parameter          | Type   | Default   | Description                |
+| ------------------ | ------ | --------- | -------------------------- |
+| `api.host`         | string | `0.0.0.0` | Server host address        |
+| `api.port`         | int    | `8000`    | Server port                |
+| `api.reload`       | bool   | `false`   | Auto-reload on changes     |
+| `api.workers`      | int    | `1`       | Number of worker processes |
+| `api.cors_origins` | array  | `[]`      | Allowed CORS origins       |
 
 ```json
 {
@@ -218,6 +218,7 @@ STEP_DETECTION_DEBUG=false
 ### Environment Configuration Files
 
 #### `.env` (Development)
+
 ```bash
 STEP_DETECTION_ENV=development
 STEP_DETECTION_DEBUG=true
@@ -227,6 +228,7 @@ STEP_DETECTION_API_WORKERS=1
 ```
 
 #### `.env.production` (Production)
+
 ```bash
 STEP_DETECTION_ENV=production
 STEP_DETECTION_DEBUG=false
@@ -238,6 +240,7 @@ STEP_DETECTION_API_PORT=8000
 ```
 
 #### `.env.docker` (Docker)
+
 ```bash
 STEP_DETECTION_ENV=docker
 STEP_DETECTION_MODEL_PATH=/app/models/step_detection_model.keras
@@ -273,6 +276,7 @@ python main.py --help
 ```
 
 Output:
+
 ```
 🚶‍♂️ Step Detection System
 
@@ -295,7 +299,7 @@ Options:
 ```python
 from src.step_detection.config import (
     ModelConfig,
-    DetectionConfig, 
+    DetectionConfig,
     APIConfig,
     LoggingConfig,
     StepDetectionConfig
@@ -437,7 +441,7 @@ data:
 class CustomPreprocessor:
     def __init__(self, config):
         self.scale_factor = config.get('scale_factor', 1.0)
-        
+
     def process(self, data):
         return data * self.scale_factor
 
@@ -478,8 +482,8 @@ class CustomPreprocessor:
       "threshold_optimization": {
         "enabled": true,
         "variants": {
-          "control": {"start_threshold": 0.7},
-          "treatment": {"start_threshold": 0.75}
+          "control": { "start_threshold": 0.7 },
+          "treatment": { "start_threshold": 0.75 }
         },
         "split_ratio": 0.5
       }
@@ -559,7 +563,7 @@ from pydantic import BaseModel, validator
 class ModelConfig(BaseModel):
     path: str
     confidence_threshold: float
-    
+
     @validator('confidence_threshold')
     def validate_threshold(cls, v):
         if not 0 <= v <= 1:
@@ -570,7 +574,7 @@ class DetectionConfig(BaseModel):
     start_threshold: float
     end_threshold: float
     min_step_interval: float
-    
+
     @validator('start_threshold', 'end_threshold')
     def validate_thresholds(cls, v):
         if not 0 <= v <= 1:
@@ -584,10 +588,10 @@ class DetectionConfig(BaseModel):
 # tests/test_config.py
 def test_config_validation():
     """Test configuration validation."""
-    
+
 def test_config_loading():
     """Test loading from different sources."""
-    
+
 def test_environment_override():
     """Test environment variable overrides."""
 ```

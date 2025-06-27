@@ -7,7 +7,7 @@ Comprehensive testing guide for the Step Detection system.
 Our testing strategy covers:
 
 - ✅ **Unit Tests**: Individual component testing
-- 🔄 **Integration Tests**: Component interaction testing  
+- 🔄 **Integration Tests**: Component interaction testing
 - ⚡ **Performance Tests**: Speed and accuracy benchmarks
 - 🌐 **API Tests**: REST and WebSocket endpoint testing
 - 📱 **Real-time Tests**: Live detection validation
@@ -36,10 +36,10 @@ Tests basic package functionality and imports:
 ```python
 def test_package_imports():
     """Test that all main components can be imported."""
-    
+
 def test_model_loading():
     """Test model loading from different paths."""
-    
+
 def test_data_loading():
     """Test data loading and preprocessing."""
 ```
@@ -53,13 +53,13 @@ Tests core detection algorithms:
 ```python
 def test_step_detector_initialization():
     """Test StepDetector initialization."""
-    
+
 def test_single_step_detection():
     """Test detection of individual steps."""
-    
+
 def test_multiple_step_sequence():
     """Test detection of step sequences."""
-    
+
 def test_threshold_optimization():
     """Test threshold optimization logic."""
 ```
@@ -73,10 +73,10 @@ Tests REST and WebSocket endpoints:
 ```python
 def test_health_endpoint():
     """Test API health check."""
-    
+
 def test_step_detection_endpoint():
     """Test step detection POST endpoint."""
-    
+
 def test_websocket_connection():
     """Test WebSocket real-time detection."""
 ```
@@ -90,10 +90,10 @@ Benchmarks system performance:
 ```python
 def test_inference_speed():
     """Test model inference speed."""
-    
+
 def test_memory_usage():
     """Test memory consumption."""
-    
+
 def test_concurrent_requests():
     """Test API under load."""
 ```
@@ -127,7 +127,7 @@ def sample_sensor_data():
 ```
 tests/data/
 ├── sample_walking.csv      # Sample walking data
-├── sample_running.csv      # Sample running data  
+├── sample_running.csv      # Sample running data
 ├── sample_stationary.csv   # Sample stationary data
 └── edge_cases.csv          # Edge case test data
 ```
@@ -202,7 +202,7 @@ pytest tests/ --cov=src --cov-report=term
 ```ini
 [run]
 source = src
-omit = 
+omit =
     */tests/*
     */venv/*
     */.venv/*
@@ -266,17 +266,17 @@ from src.step_detection.core.detector import StepDetector
 
 def benchmark_inference_speed():
     detector = StepDetector("models/step_detection_model.keras")
-    
+
     # Generate test data
     n_samples = 1000
     test_data = np.random.randn(n_samples, 6)
-    
+
     # Benchmark
     start_time = time.time()
     for data in test_data:
         detector.process_reading(*data)
     end_time = time.time()
-    
+
     avg_time = (end_time - start_time) / n_samples * 1000  # ms
     print(f"⚡ Average inference time: {avg_time:.2f} ms")
     print(f"🚀 Throughput: {1000/avg_time:.0f} samples/second")
@@ -353,25 +353,25 @@ jobs:
         python-version: [3.11, 3.12]
 
     steps:
-    - uses: actions/checkout@v3
-    
-    - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v3
-      with:
-        python-version: ${{ matrix.python-version }}
-    
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install -r requirements.txt
-        pip install pytest pytest-cov
-    
-    - name: Run tests
-      run: |
-        pytest tests/ --cov=src --cov-report=xml
-    
-    - name: Upload coverage
-      uses: codecov/codecov-action@v3
+      - uses: actions/checkout@v3
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v3
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest pytest-cov
+
+      - name: Run tests
+        run: |
+          pytest tests/ --cov=src --cov-report=xml
+
+      - name: Upload coverage
+        uses: codecov/codecov-action@v3
 ```
 
 ### Pre-commit Hooks (`.pre-commit-config.yaml`)
@@ -426,10 +426,10 @@ def test_step_detector_processes_valid_sensor_data(sample_detector, sample_senso
     # Arrange
     detector = sample_detector
     sensor_data = sample_sensor_data
-    
+
     # Act
     result = detector.process_reading(**sensor_data)
-    
+
     # Assert
     assert isinstance(result, dict), "Result should be a dictionary"
     assert "step_detected" in result, "Result should contain step_detected"
