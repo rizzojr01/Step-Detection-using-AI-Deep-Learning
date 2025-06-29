@@ -3,7 +3,8 @@ set -e
 
 # ════════════════════════════════════════════════
 # ║      STEP DETECTION: BUILD & PUSH SCRIPT      ║
-# ║      (Run this locally to build & push)       ║
+# ║      (Updated for new modular structure)      ║
+# ║      Uses docker/Dockerfile.prod              ║
 # ════════════════════════════════════════════════
 
 # Color definitions
@@ -69,23 +70,31 @@ printf "${BLUE}═════════════════════�
 printf "${BLUE}  BUILDING: $FULL_TAG${NC}\n"
 printf "${BLUE}═══════════════════════════════════════${NC}\n"
 
-# Check if Dockerfile exists
-if [[ ! -f "Dockerfile" ]]; then
-  echo -e "${RED}❌ Dockerfile not found in current directory!${NC}"
+# Check if production Dockerfile exists
+DOCKERFILE_PATH="docker/Dockerfile.prod"
+if [[ ! -f "$DOCKERFILE_PATH" ]]; then
+  echo -e "${RED}❌ Production Dockerfile not found at $DOCKERFILE_PATH!${NC}"
+  echo -e "Expected modular project structure with docker/ directory"
+  exit 1
+fi
+
+# Check if pyproject.toml exists (indicates proper project setup)
+if [[ ! -f "pyproject.toml" ]]; then
+  echo -e "${RED}❌ pyproject.toml not found! This script requires the new modular structure.${NC}"
   exit 1
 fi
 
 # Check if pre-trained model exists, if not, train it
 printf "${CYAN}🧠 Checking for pre-trained model...${NC}\n"
-if [[ ! -f "models/trained_step_detection_model.pth" ]]; then
+if [[ ! -f "models/step_detection_model.keras" ]]; then
   printf "${YELLOW}⚠️  Pre-trained model not found. Training model first...${NC}\n"
   
   # Create models directory if it doesn't exist
   mkdir -p models
   
-  # Train the model
+  # Train the model using the new main.py CLI
   printf "${CYAN}🏃‍♂️ Training step detection model...${NC}\n"
-  python train_and_save_model.py
+  python main.py train
   
   if [[ $? -ne 0 ]]; then
     echo -e "${RED}❌ Model training failed!${NC}"
@@ -94,12 +103,12 @@ if [[ ! -f "models/trained_step_detection_model.pth" ]]; then
   
   printf "${GREEN}✅ Model training completed successfully!${NC}\n"
 else
-  printf "${GREEN}✅ Pre-trained model found: models/trained_step_detection_model.pth${NC}\n"
+  printf "${GREEN}✅ Pre-trained model found: models/step_detection_model.keras${NC}\n"
 fi
 
-# 1. Build the image
-printf "${CYAN}🔨 Building Docker image...${NC}\n"
-docker build -t "$FULL_TAG" .
+# 1. Build the image using production Dockerfile
+printf "${CYAN}🔨 Building Docker image with production Dockerfile...${NC}\n"
+docker build -f "$DOCKERFILE_PATH" -t "$FULL_TAG" .
 printf "${GREEN}✅ Image built successfully: $FULL_TAG${NC}\n"
 
 # 2. Push to Docker Hub (if enabled)

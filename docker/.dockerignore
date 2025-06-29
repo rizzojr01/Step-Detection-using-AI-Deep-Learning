@@ -4,6 +4,10 @@ sample_data/
 *.csv
 *.stepMixed
 
+# Notebooks (not needed in production)
+notebooks/
+*.ipynb
+
 # Python
 __pycache__/
 *.py[cod]
@@ -46,8 +50,39 @@ venv.bak/
 .DS_Store
 Thumbs.db
 
-# Logs
+# Git
+.git/
+.gitignore
+
+# Testing
+tests/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Documentation (not needed in production)
+docs/
+README*.md
+
+# Development files
+docker-compose*.yml
+Dockerfile*
+
+# Logs (will be created in container)
+logs/
 *.log
+
+# Temporary files
+tmp/
+temp/
+.tmp/
+
+# Large files that shouldn't be in containers
+*.tar.gz
+*.zip
+
+# Environment-specific configs
+.python-version
 
 # Jupyter Notebook
 .ipynb_checkpoints

@@ -1,0 +1,145 @@
+# Kubernetes deployment for Step Detection API
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: step-detection-api
+  labels:
+    app: step-detection
+    component: api
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: step-detection
+      component: api
+  template:
+    metadata:
+      labels:
+        app: step-detection
+        component: api
+    spec:
+      containers:
+        - name: step-detection-api
+          image: step-detection:latest
+          ports:
+            - containerPort: 8000
+              name: http
+          env:
+            - name: STEP_DETECTION_ENV
+              value: "production"
+            - name: STEP_DETECTION_API_WORKERS
+              value: "1" # One worker per container
+            - name: STEP_DETECTION_LOG_LEVEL
+              value: "INFO"
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "250m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+          volumeMounts:
+            - name: models
+              mountPath: /app/models
+              readOnly: true
+            - name: logs
+              mountPath: /app/logs
+      volumes:
+        - name: models
+          configMap:
+            name: step-detection-models
+        - name: logs
+          emptyDir: {}
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: step-detection-service
+  labels:
+    app: step-detection
+spec:
+  selector:
+    app: step-detection
+    component: api
+  ports:
+    - port: 80
+      targetPort: 8000
+      protocol: TCP
+      name: http
+  type: ClusterIP
+
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: step-detection-ingress
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+    nginx.ingress.kubernetes.io/proxy-body-size: "10m"
+    nginx.ingress.kubernetes.io/rate-limit: "100"
+    nginx.ingress.kubernetes.io/rate-limit-window: "1m"
+spec:
+  rules:
+    - host: step-detection.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: step-detection-service
+                port:
+                  number: 80
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: step-detection-config
+data:
+  STEP_DETECTION_ENV: "production"
+  STEP_DETECTION_LOG_LEVEL: "INFO"
+  STEP_DETECTION_API_WORKERS: "1"
+
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: step-detection-hpa
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: step-detection-api
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80

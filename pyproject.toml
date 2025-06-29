@@ -6,8 +6,11 @@ readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.115.14",
+    "ipykernel>=6.29.5",
+    "matplotlib>=3.10.3",
     "pandas>=2.3.0",
     "pydantic>=2.11.7",
+    "pyyml>=0.0.2",
     "scikit-learn>=1.7.0",
     "tensorflow>=2.19.0",
     "uvicorn>=0.34.3",

@@ -7,6 +7,18 @@
 
 A production-ready, real-time step detection system using Convolutional Neural Networks (CNN) with TensorFlow/Keras. This project provides both a Python package and REST/WebSocket APIs for accurate step detection from accelerometer and gyroscope sensor data.
 
+## 🎯 What's New
+
+> **🚀 Enhanced Build & Deployment**: Complete refactor with production-ready Docker workflows, automated setup scripts, and comprehensive deployment options.
+
+**Recent Updates:**
+
+- ✅ **Interactive Setup**: `./scripts/quick-setup.sh` - Get running in minutes
+- 🐳 **Docker Ready**: Development and production Docker environments
+- 🔧 **Unified Scripts**: Single commands for build, deploy, and manage
+- 📚 **Complete Docs**: Step-by-step guides for all scenarios
+- 🎯 **Modular Code**: Clean separation of concerns and testable architecture
+
 ## ✨ Features
 
 - 🧠 **Deep Learning Model**: 1D CNN optimized for sensor time-series data
@@ -64,15 +76,41 @@ Step-Detection-using-AI-Deep-Learning/
 
 ## 🚀 Quick Start
 
+> **⚡ Super Quick Setup**: Run `./scripts/quick-setup.sh` for an interactive setup wizard that gets you running in minutes!
+
 ### 📦 Installation
 
-#### Option 1: Standard Installation
+#### Option 1: Interactive Setup (Recommended for new users)
 
 ```bash
 # Clone the repository
 git clone <repository-url>
 cd Step-Detection-using-AI-Deep-Learning
 
+# Run the interactive setup wizard
+./scripts/quick-setup.sh
+```
+
+This script will:
+
+- ✅ Check system dependencies
+- 🎯 Guide you through setup options
+- 🐳 Set up Docker or local environment
+- 🚀 Get you running immediately
+
+#### Option 2: Manual Docker Setup (Fastest)
+
+```bash
+# Development environment with hot-reload
+./scripts/build-dev.sh up
+
+# Or production environment
+./scripts/deploy.sh local
+```
+
+#### Option 3: Standard Python Installation
+
+```bash
 # Create virtual environment
 python -m venv .venv
 source .venv/bin/activate  # On Windows: .venv\Scripts\activate
@@ -81,22 +119,18 @@ source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-#### Option 2: UV Package Manager (Recommended)
+#### Option 4: UV Package Manager
 
 ```bash
 # Install UV (if not already installed)
 curl -LsSf https://astral.sh/uv/install.sh | sh
-
-# Clone and setup
-git clone <repository-url>
-cd Step-Detection-using-AI-Deep-Learning
 
 # Install with UV (faster)
 uv sync
 uv shell  # Activate environment
 ```
 
-#### Option 3: Development Installation
+#### Option 5: Development Installation
 
 ```bash
 # Install the package in development mode
@@ -106,6 +140,42 @@ uv pip install -e .
 ```
 
 ### 🎮 Usage Options
+
+#### 🐳 Docker Usage (Recommended)
+
+**Development Environment** (with hot-reload):
+
+```bash
+# Start development environment
+./scripts/build-dev.sh up
+
+# View logs
+./scripts/build-dev.sh logs
+
+# Access container shell
+./scripts/build-dev.sh shell
+
+# Run tests
+./scripts/build-dev.sh test
+
+# Stop environment
+./scripts/build-dev.sh down
+```
+
+**Production Environment**:
+
+```bash
+# Build production image
+./scripts/build-all.sh prod
+
+# Deploy locally
+./scripts/deploy.sh local
+
+# Deploy to remote server (after pushing to Docker Hub)
+./scripts/deploy.sh deploy -u your_dockerhub_user
+```
+
+**📚 Build Scripts Reference**: See [docs/BUILD_SCRIPTS.md](docs/BUILD_SCRIPTS.md) for complete guide.
 
 #### 🎮 Interactive CLI Interface
 

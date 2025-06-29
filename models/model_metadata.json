@@ -5,6 +5,6 @@
     6
   ],
   "output_classes": 3,
-  "validation_accuracy": 0.9623861914324787,
+  "validation_accuracy": 0.9624847536560425,
   "epochs_trained": 50
 }

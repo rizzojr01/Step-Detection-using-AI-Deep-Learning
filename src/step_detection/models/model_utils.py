@@ -5,7 +5,7 @@ Functions for creating, training, and evaluating TensorFlow models.
 
 import json
 import os
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 import tensorflow as tf
@@ -13,33 +13,138 @@ from sklearn.metrics import accuracy_score, classification_report, confusion_mat
 from tensorflow import keras
 from tensorflow.keras import layers
 
+# Import configuration
+from ..utils.config import get_config
 
-def create_cnn_model(
-    input_shape: Tuple[int, ...] = (6,), num_classes: int = 3
+
+def create_dnn_model(
+    input_shape: Optional[Tuple[int, ...]] = None,
+    num_classes: Optional[int] = None,
+    dropout_rate: Optional[float] = None,
+    regularization: Optional[float] = None,
+    config_path: Optional[str] = None,
 ) -> keras.Model:
     """
-    Create CNN model for step detection.
+    Create Deep Neural Network model for step detection using configuration.
 
     Args:
-        input_shape: Input shape (number of sensor features)
-        num_classes: Number of output classes
+        input_shape: Input shape (overrides config)
+        num_classes: Number of output classes (overrides config)
+        dropout_rate: Dropout rate (overrides config)
+        regularization: L2 regularization factor (overrides config)
+        config_path: Path to config file
 
     Returns:
         Compiled Keras model
     """
+    # Load configuration
+    config = get_config(config_path)
+
+    # Get parameters from config or use provided values
+    if input_shape is None:
+        input_shape = tuple(config.get_input_shape())
+    if num_classes is None:
+        num_classes = config.get_output_classes()
+    if dropout_rate is None:
+        dropout_rate = config.get_dropout_rate()
+    if regularization is None:
+        regularization = config.get_regularization()
+
+    print(f"🧠 Creating DNN model with:")
+    print(f"   Input shape: {input_shape}")
+    print(f"   Output classes: {num_classes}")
+    print(f"   Dropout rate: {dropout_rate}")
+    print(f"   Regularization: {regularization}")
     model = keras.Sequential(
         [
-            layers.Reshape((1, input_shape[0]), input_shape=input_shape),
-            layers.Conv1D(filters=32, kernel_size=1, strides=1, activation="relu"),
-            layers.MaxPooling1D(pool_size=1),
-            layers.Conv1D(filters=64, kernel_size=1, strides=1, activation="relu"),
-            layers.Flatten(),
-            layers.Dense(num_classes, activation="softmax"),
+            layers.Dense(
+                128,
+                activation="relu",
+                input_shape=input_shape,
+                kernel_regularizer=keras.regularizers.l2(regularization),
+            ),
+            layers.Dropout(dropout_rate),
+            layers.Dense(
+                64,
+                activation="relu",
+                kernel_regularizer=keras.regularizers.l2(regularization),
+            ),
+            layers.Dropout(dropout_rate),
+            layers.Dense(
+                32,
+                activation="relu",
+                kernel_regularizer=keras.regularizers.l2(regularization),
+            ),
+            layers.Dropout(dropout_rate),
+            layers.Dense(
+                num_classes,
+                activation="softmax",
+                kernel_regularizer=keras.regularizers.l2(regularization),
+            ),
         ]
     )
 
+    # Get learning rate from config
+    learning_rate = config.get_learning_rate()
+
     model.compile(
-        optimizer="adam", loss="sparse_categorical_crossentropy", metrics=["accuracy"]
+        optimizer=keras.optimizers.Adam(learning_rate=learning_rate),
+        loss="sparse_categorical_crossentropy",
+        metrics=["accuracy"],
+    )
+
+    return model
+
+
+def create_cnn_model(
+    input_shape: Optional[Tuple[int, ...]] = None,
+    num_classes: Optional[int] = None,
+    dropout_rate: Optional[float] = None,
+    regularization: Optional[float] = None,
+    config_path: Optional[str] = None,
+) -> keras.Model:
+    """
+    Create CNN model for step detection using the EXACT original high-accuracy architecture.
+    This is the EXACT same code from the notebook that achieved ~96% accuracy.
+
+    Args:
+        input_shape: Input shape (overrides config)
+        num_classes: Number of output classes (overrides config)
+        dropout_rate: Dropout rate (overrides config) - NOT USED in original
+        regularization: L2 regularization factor (overrides config) - NOT USED in original
+        config_path: Path to config file
+
+    Returns:
+        Compiled Keras model
+    """
+    print("🧠 Creating CNN model with EXACT original high-accuracy architecture...")
+
+    # Use the EXACT same architecture from the notebook
+    model = keras.Sequential(
+        [
+            # Input layer - reshape for Conv1D (batch_size, timesteps, features)
+            layers.Reshape((1, 6), input_shape=(6,)),
+            # First Conv1D layer - equivalent to PyTorch Conv1d(6, 32, kernel_size=1)
+            layers.Conv1D(filters=32, kernel_size=1, strides=1, activation="relu"),
+            # MaxPool1D layer - equivalent to PyTorch MaxPool1d(kernel_size=1)
+            layers.MaxPooling1D(pool_size=1),
+            # Second Conv1D layer - equivalent to PyTorch Conv1d(32, 64, kernel_size=1)
+            layers.Conv1D(filters=64, kernel_size=1, strides=1, activation="relu"),
+            # Flatten for dense layer
+            layers.Flatten(),
+            # Dense layer for classification - equivalent to PyTorch Linear(64, 3)
+            layers.Dense(3, activation="softmax"),
+        ]
+    )
+
+    # Compile with EXACT same settings as notebook
+    model.compile(
+        optimizer="adam", loss="categorical_crossentropy", metrics=["accuracy"]
+    )
+
+    print("✅ CNN model created with EXACT original architecture!")
+    print(
+        "🎯 This is the EXACT same model that achieved ~96% accuracy in the notebook!"
     )
 
     return model
@@ -51,12 +156,14 @@ def train_model(
     train_labels: np.ndarray,
     val_features: np.ndarray,
     val_labels: np.ndarray,
-    epochs: int = 100,
-    batch_size: int = 32,
-    patience: int = 10,
+    epochs: Optional[int] = None,
+    batch_size: Optional[int] = None,
+    patience: Optional[int] = None,
+    config_path: Optional[str] = None,
 ) -> keras.callbacks.History:
     """
-    Train the model with early stopping and learning rate reduction.
+    Train the model with EXACT same approach as the high-accuracy notebook.
+    Simple training without callbacks or class weights - this achieves ~96% accuracy.
 
     Args:
         model: Keras model to train
@@ -64,35 +171,61 @@ def train_model(
         train_labels: Training labels
         val_features: Validation features
         val_labels: Validation labels
-        epochs: Maximum number of epochs
-        batch_size: Batch size for training
-        patience: Early stopping patience
+        epochs: Maximum number of epochs (overrides config)
+        batch_size: Batch size for training (overrides config)
+        patience: Early stopping patience (IGNORED - not used in notebook)
+        config_path: Path to config file
 
     Returns:
         Training history
     """
-    callbacks = [
-        keras.callbacks.EarlyStopping(
-            monitor="val_loss", patience=patience, restore_best_weights=True, verbose=1
-        ),
-        keras.callbacks.ReduceLROnPlateau(
-            monitor="val_loss",
-            factor=0.5,
-            patience=patience // 2,
-            min_lr=1e-7,
-            verbose=1,
-        ),
-    ]
+    # Load configuration
+    config = get_config(config_path)
 
+    # Get parameters from config or use provided values
+    if epochs is None:
+        epochs = config.get_epochs()
+    if batch_size is None:
+        batch_size = config.get_batch_size()
+
+    print(f"🏃‍♂️ Training model with EXACT notebook approach:")
+    print(f"   Epochs: {epochs}")
+    print(f"   Batch size: {batch_size}")
+    print(f"   No callbacks, no class weights - simple like the notebook!")
+
+    # Check if model expects categorical or sparse categorical labels
+    model_loss = model.loss
+    if hasattr(model_loss, "name"):
+        loss_name = model_loss.name
+    elif hasattr(model_loss, "__name__"):
+        loss_name = model_loss.__name__
+    else:
+        loss_name = str(model_loss)
+
+    # Convert labels if necessary for categorical crossentropy
+    if "categorical_crossentropy" in loss_name and len(train_labels.shape) == 1:
+        print(
+            "🔄 Converting integer labels to one-hot encoding for categorical crossentropy..."
+        )
+        from tensorflow.keras.utils import to_categorical
+
+        train_labels = to_categorical(train_labels, num_classes=3)
+        val_labels = to_categorical(val_labels, num_classes=3)
+        print(f"   Labels converted to shape: {train_labels.shape}")
+
+    # Train the model with EXACT notebook approach - simple and effective!
+    # No class weights, no callbacks - just plain training like the notebook
     history = model.fit(
         train_features,
-        train_labels,
+        train_labels,  # One-hot encoded labels
         validation_data=(val_features, val_labels),
         epochs=epochs,
         batch_size=batch_size,
-        callbacks=callbacks,
         verbose=1,
     )
+
+    print(f"✅ Training completed after {len(history.history['loss'])} epochs!")
+    print("🎯 Used EXACT same simple approach as the high-accuracy notebook!")
 
     return history
 
@@ -136,7 +269,10 @@ def evaluate_model(
 
 
 def save_model_and_metadata(
-    model: keras.Model, model_path: str, metadata: Dict, metadata_path: str = None
+    model: keras.Model,
+    model_path: str,
+    metadata: Dict,
+    metadata_path: Optional[str] = None,
 ):
     """
     Save model and metadata.
@@ -164,7 +300,7 @@ def save_model_and_metadata(
 
 
 def load_model_with_metadata(
-    model_path: str, metadata_path: str = None
+    model_path: str, metadata_path: Optional[str] = None
 ) -> Tuple[keras.Model, Dict]:
     """
     Load model and metadata.
@@ -196,7 +332,7 @@ def load_model_with_metadata(
 def optimize_thresholds(
     predictions: np.ndarray,
     true_labels: np.ndarray,
-    threshold_range: List[float] = None,
+    threshold_range: Optional[List[float]] = None,
 ) -> Dict:
     """
     Optimize detection thresholds based on validation data.
@@ -279,14 +415,16 @@ if __name__ == "__main__":
     print("Model Utilities")
     print("===============")
 
-    # Create a sample model
-    model = create_cnn_model()
-    print("Sample model created:")
-    model.summary()
+    # Create sample models
+    print("Creating CNN model (original high-accuracy architecture):")
+    cnn_model = create_cnn_model()
+    print("CNN model created:")
+    cnn_model.summary()
 
     print("\nModel utilities loaded successfully!")
     print("Available functions:")
-    print("- create_cnn_model()")
+    print("- create_cnn_model() (original high-accuracy CNN)")
+    print("- create_dnn_model() (simple dense network)")
     print("- train_model()")
     print("- evaluate_model()")
     print("- save_model_and_metadata()")

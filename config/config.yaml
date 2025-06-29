@@ -4,23 +4,48 @@
 model:
   input_shape: [6] # 6 sensor features (3 accel + 3 gyro)
   output_classes: 3 # No Label, Start, End
-  architecture: "CNN"
+  architecture: "CNN" # Original high-accuracy CNN architecture
   framework: "TensorFlow"
 
 # Training Configuration
 training:
-  epochs: 10
-  batch_size: 64
+  epochs: 50 # Increased for better convergence
+  batch_size: 32 # Reduced for better gradient updates
   learning_rate: 0.001
   validation_split: 0.2
   early_stopping_patience: 10
   reduce_lr_patience: 5
 
+  # Model architecture parameters
+  dropout_rate: 0.3 # Increased to reduce overfitting to small movements
+  regularization: 0.001 # L2 regularization factor
+
+  # Class balancing
+  use_class_weights: true # Automatically calculate class weights
+
+  # Data augmentation (if needed)
+  data_augmentation: false
+  noise_factor: 0.01
+
 # Detection Configuration
 detection:
-  start_threshold: 0.03
-  end_threshold: 0.03
+  # Legacy thresholds (for backward compatibility)
+  start_threshold: 0.07
+  end_threshold: 0.07
   window_size: 50
+
+  # Enhanced sensitivity controls (NEW)
+  confidence_threshold: 0.7 # Minimum confidence for step detection
+  magnitude_threshold: 15.0 # Minimum movement magnitude (reduces phone shake false positives)
+
+  # Model prediction thresholds
+  prediction_confidence_min: 0.5 # Minimum confidence to consider any prediction
+  step_class_threshold: 0.6 # Specific threshold for step classes (1=start, 2=end)
+
+  # Filtering parameters
+  enable_magnitude_filter: true # Enable/disable magnitude-based filtering
+  enable_confidence_filter: true # Enable/disable confidence-based filtering
+  temporal_smoothing: false # Enable temporal smoothing (future feature)
 
 # Data Configuration
 data:

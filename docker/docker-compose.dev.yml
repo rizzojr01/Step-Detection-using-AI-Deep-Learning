@@ -1,0 +1,51 @@
+# Docker Compose for Step Detection Development
+version: '3.8'
+
+services:
+  step-detection-dev:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.dev
+    ports:
+      - "8000:8000"
+    volumes:
+      - .:/app
+      - /app/.venv  # Don't mount virtual environment
+    environment:
+      - STEP_DETECTION_ENV=development
+      - STEP_DETECTION_DEBUG=true
+      - STEP_DETECTION_LOG_LEVEL=DEBUG
+      - STEP_DETECTION_API_RELOAD=true
+    stdin_open: true
+    tty: true
+    networks:
+      - step-detection-network
+
+  # Optional: Add a database for storing step data
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - step-detection-network
+
+  # Optional: Add monitoring
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./docker/prometheus.yml:/etc/prometheus/prometheus.yml
+    networks:
+      - step-detection-network
+    profiles:
+      - monitoring
+
+networks:
+  step-detection-network:
+    driver: bridge
+
+volumes:
+  redis_data:

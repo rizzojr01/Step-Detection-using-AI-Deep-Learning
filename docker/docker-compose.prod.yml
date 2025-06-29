@@ -1,0 +1,93 @@
+# Docker Compose for Step Detection Production
+version: '3.8'
+
+services:
+  step-detection:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.prod
+    ports:
+      - "8000:8000"
+    environment:
+      - STEP_DETECTION_ENV=production
+      - STEP_DETECTION_DEBUG=false
+      - STEP_DETECTION_LOG_LEVEL=INFO
+      - STEP_DETECTION_API_WORKERS=4
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - step-detection-network
+    volumes:
+      - ./logs:/app/logs
+      - ./models:/app/models:ro
+
+  # Nginx reverse proxy
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./docker/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./docker/ssl:/etc/nginx/ssl:ro
+    depends_on:
+      - step-detection
+    restart: unless-stopped
+    networks:
+      - step-detection-network
+
+  # Redis for caching and session storage
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    networks:
+      - step-detection-network
+
+  # Monitoring with Prometheus
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./docker/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    restart: unless-stopped
+    networks:
+      - step-detection-network
+    profiles:
+      - monitoring
+
+  # Grafana for visualization
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./docker/grafana:/etc/grafana/provisioning
+    restart: unless-stopped
+    networks:
+      - step-detection-network
+    profiles:
+      - monitoring
+
+networks:
+  step-detection-network:
+    driver: bridge
+
+volumes:
+  redis_data:
+  prometheus_data:
+  grafana_data:

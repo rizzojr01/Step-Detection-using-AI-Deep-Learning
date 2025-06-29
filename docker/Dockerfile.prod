@@ -4,21 +4,23 @@ FROM python:3.11-slim as builder
 # Set working directory
 WORKDIR /app
 
-# Install system dependencies
+# Install system dependencies for building
 RUN apt-get update && apt-get install -y \
     curl \
     build-essential \
+    gcc \
+    g++ \
     && rm -rf /var/lib/apt/lists/*
 
-# Install uv
+# Install uv package manager
 RUN curl -LsSf https://astral.sh/uv/install.sh | sh
 ENV PATH="/root/.local/bin:$PATH"
 
-# Copy project files
+# Copy project configuration files
 COPY pyproject.toml uv.lock ./
 
-# Install dependencies
-RUN uv sync --frozen
+# Install Python dependencies
+RUN uv sync --frozen --no-dev
 
 # Production stage
 FROM python:3.11-slim as production
@@ -28,11 +30,12 @@ WORKDIR /app
 
 # Install runtime dependencies only
 RUN apt-get update && apt-get install -y \
+    --no-install-recommends \
     curl \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean
 
-# Copy uv from builder
+# Copy uv from builder stage
 COPY --from=builder /root/.local /root/.local
 ENV PATH="/root/.local/bin:$PATH"
 
@@ -40,15 +43,27 @@ ENV PATH="/root/.local/bin:$PATH"
 COPY --from=builder /app/.venv /app/.venv
 ENV PATH="/app/.venv/bin:$PATH"
 
-# Copy application code
-COPY *.py ./
-COPY README.md ./
+# Copy application code with new structure
+COPY src/ ./src/
+COPY main.py launcher.py ./
 COPY models/ ./models/
+COPY config/ ./config/
 COPY pyproject.toml ./
+COPY README.md ./
 
-# Create non-root user
-RUN useradd --create-home --shell /bin/bash app && chown -R app:app /app
+# Create logs directory
+RUN mkdir -p logs
+
+# Create non-root user for security
+RUN useradd --create-home --shell /bin/bash --uid 1000 app \
+    && chown -R app:app /app
 USER app
+
+# Environment variables
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONOPTIMIZE=1
+ENV STEP_DETECTION_ENV=production
 
 # Expose port
 EXPOSE 8000
@@ -57,5 +72,5 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:8000/health || exit 1
 
-# Run the application
-CMD ["python", "-m", "uvicorn", "step_detection_api:app", "--host", "0.0.0.0", "--port", "8000"]
+# Run the application using the new modular structure
+CMD ["python", "-m", "uvicorn", "src.step_detection.api.api:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
