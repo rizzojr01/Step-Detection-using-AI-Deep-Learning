@@ -2,7 +2,11 @@ import modal
 
 app = modal.App("step-detection-app")
 
-image = modal.Image.debian_slim().pip_install_from_requirements("requirements.txt")
+image = (
+    modal.Image.debian_slim()
+    .pip_install_from_requirements("requirements.txt")
+    .add_local_dir(".", remote_path="/root")
+)
 
 @app.function(image=image)
 @modal.asgi_app()
