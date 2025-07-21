@@ -17,83 +17,6 @@ from tensorflow.keras import layers
 from ..utils.config import get_config
 
 
-def create_dnn_model(
-    input_shape: Optional[Tuple[int, ...]] = None,
-    num_classes: Optional[int] = None,
-    dropout_rate: Optional[float] = None,
-    regularization: Optional[float] = None,
-    config_path: Optional[str] = None,
-) -> keras.Model:
-    """
-    Create Deep Neural Network model for step detection using configuration.
-
-    Args:
-        input_shape: Input shape (overrides config)
-        num_classes: Number of output classes (overrides config)
-        dropout_rate: Dropout rate (overrides config)
-        regularization: L2 regularization factor (overrides config)
-        config_path: Path to config file
-
-    Returns:
-        Compiled Keras model
-    """
-    # Load configuration
-    config = get_config(config_path)
-
-    # Get parameters from config or use provided values
-    if input_shape is None:
-        input_shape = tuple(config.get_input_shape())
-    if num_classes is None:
-        num_classes = config.get_output_classes()
-    if dropout_rate is None:
-        dropout_rate = config.get_dropout_rate()
-    if regularization is None:
-        regularization = config.get_regularization()
-
-    print(f"🧠 Creating DNN model with:")
-    print(f"   Input shape: {input_shape}")
-    print(f"   Output classes: {num_classes}")
-    print(f"   Dropout rate: {dropout_rate}")
-    print(f"   Regularization: {regularization}")
-    model = keras.Sequential(
-        [
-            layers.Dense(
-                128,
-                activation="relu",
-                input_shape=input_shape,
-                kernel_regularizer=keras.regularizers.l2(regularization),
-            ),
-            layers.Dropout(dropout_rate),
-            layers.Dense(
-                64,
-                activation="relu",
-                kernel_regularizer=keras.regularizers.l2(regularization),
-            ),
-            layers.Dropout(dropout_rate),
-            layers.Dense(
-                32,
-                activation="relu",
-                kernel_regularizer=keras.regularizers.l2(regularization),
-            ),
-            layers.Dropout(dropout_rate),
-            layers.Dense(
-                num_classes,
-                activation="softmax",
-                kernel_regularizer=keras.regularizers.l2(regularization),
-            ),
-        ]
-    )
-
-    # Get learning rate from config
-    learning_rate = config.get_learning_rate()
-
-    model.compile(
-        optimizer=keras.optimizers.Adam(learning_rate=learning_rate),
-        loss="sparse_categorical_crossentropy",
-        metrics=["accuracy"],
-    )
-
-    return model
 
 
 def create_cnn_model(
@@ -117,22 +40,28 @@ def create_cnn_model(
     Returns:
         Compiled Keras model
     """
-    print("🧠 Creating CNN model with EXACT original high-accuracy architecture...")
+    # Load configuration
+    config = get_config(config_path)
+    input_shape = input_shape or tuple(config.get_input_shape())
+    num_classes = num_classes or config.get_output_classes()
+    dropout_rate = dropout_rate or config.get_dropout_rate()
+    regularization = regularization or config.get_regularization()
+
 
     # Use the EXACT same architecture from the notebook
     model = keras.Sequential(
         [
             # Input layer - reshape for Conv1D (batch_size, timesteps, features)
-            layers.Reshape((1, 6), input_shape=(6,)),
-            # First Conv1D layer - equivalent to PyTorch Conv1d(6, 32, kernel_size=1)
+            layers.Reshape((1, 6), input_shape=input_shape),
+            # First convolutional layer
             layers.Conv1D(filters=32, kernel_size=1, strides=1, activation="relu"),
-            # MaxPool1D layer - equivalent to PyTorch MaxPool1d(kernel_size=1)
+            # First max pooling layer
             layers.MaxPooling1D(pool_size=1),
-            # Second Conv1D layer - equivalent to PyTorch Conv1d(32, 64, kernel_size=1)
+            # Second convolutional layer
             layers.Conv1D(filters=64, kernel_size=1, strides=1, activation="relu"),
             # Flatten for dense layer
             layers.Flatten(),
-            # Dense layer for classification - equivalent to PyTorch Linear(64, 3)
+            # Dense layer for classification
             layers.Dense(3, activation="softmax"),
         ]
     )
@@ -424,7 +353,6 @@ if __name__ == "__main__":
     print("\nModel utilities loaded successfully!")
     print("Available functions:")
     print("- create_cnn_model() (original high-accuracy CNN)")
-    print("- create_dnn_model() (simple dense network)")
     print("- train_model()")
     print("- evaluate_model()")
     print("- save_model_and_metadata()")
