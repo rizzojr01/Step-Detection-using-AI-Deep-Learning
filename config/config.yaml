@@ -30,8 +30,8 @@ training:
 # Detection Configuration
 detection:
   window_size: 50
-  # Enhanced sensitivity controls (NEW)
-  confidence_threshold: 0.7 # Minimum confidence for step detection
+  # Enhanced sensitivity controls
+  confidence_threshold: 0.15 # Minimum confidence for step detection
   magnitude_threshold: 15.0 # Minimum movement magnitude (reduces phone shake false positives)
 
   # Model prediction thresholds
