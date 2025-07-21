@@ -29,11 +29,7 @@ training:
 
 # Detection Configuration
 detection:
-  # Legacy thresholds (for backward compatibility)
-  start_threshold: 0.07
-  end_threshold: 0.07
   window_size: 50
-
   # Enhanced sensitivity controls (NEW)
   confidence_threshold: 0.7 # Minimum confidence for step detection
   magnitude_threshold: 15.0 # Minimum movement magnitude (reduces phone shake false positives)
