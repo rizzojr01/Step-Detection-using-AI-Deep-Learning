@@ -29,4 +29,4 @@ jobs:
 
       - name: Deploy Modal App
         run: |
-          modal deploy -m modal_app
+          modal deploy -m modal_app.py
