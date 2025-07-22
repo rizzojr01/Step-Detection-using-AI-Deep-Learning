@@ -2,7 +2,6 @@ import modal
 
 app = modal.App("step-detection-app")
 
-# Create a volume for persistent model storage (optional - for production)
 model_volume = modal.Volume.from_name("step-detection-models", create_if_missing=True)
 
 image = (
@@ -14,8 +13,6 @@ image = (
 
 @app.function(
     image=image,
-    # Optional: Mount persistent volume for models (uncomment if needed)
-    # volumes={"/root/persistent_models": model_volume}
     scaledown_window=600,
 )
 @modal.asgi_app()
