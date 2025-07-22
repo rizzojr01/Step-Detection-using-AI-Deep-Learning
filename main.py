@@ -21,6 +21,9 @@ from src.step_detection import (
     train_model,
 )
 
+# Import the balanced model retraining function
+from src.step_detection.models.retrain_balanced_model import retrain_with_class_balance
+
 
 def optimize_thresholds():
     """Find optimal thresholds for step detection."""
@@ -153,6 +156,75 @@ def train_new_model():
         return False
 
 
+def retrain_balanced_model():
+    """Retrain the model with class balancing to fix prediction issues."""
+    print("⚖️ Retraining Model with Class Balancing")
+    print("=" * 40)
+    print("This will address the issue where the model predicts 99%+ 'No Step'")
+    print("by balancing the training data and using class weights.")
+    
+    try:
+        # Check if original model exists
+        model_path = "models/step_detection_model.keras"
+        if not os.path.exists(model_path):
+            print("⚠️ No existing model found. Training a new balanced model from scratch.")
+        else:
+            print("📊 Existing model found. Will retrain with balanced approach.")
+        
+        print("\n🔄 Starting balanced retraining process...")
+        
+        # Call the balanced retraining function
+        model = retrain_with_class_balance()
+        
+        if model is not None:
+            print("✅ Balanced model retraining completed successfully!")
+            print("\n🎯 Key improvements made:")
+            print("   • Applied class weights to balance training")
+            print("   • Used data augmentation for minority classes")
+            print("   • Adjusted model architecture for better sensitivity")
+            print("   • Optimized thresholds for real-world usage")
+            
+            # Test the retrained model quickly
+            print("\n🧪 Quick test of retrained model...")
+            test_quick_predictions(model)
+            
+            return True
+        else:
+            print("❌ Balanced retraining failed. Check the logs for details.")
+            return False
+            
+    except ImportError as e:
+        print(f"❌ Import error: {e}")
+        print("Make sure all required dependencies are installed.")
+        return False
+    except Exception as e:
+        print(f"❌ Error during balanced retraining: {e}")
+        return False
+
+
+def test_quick_predictions(model):
+    """Quick test to verify the retrained model produces better predictions."""
+    print("Testing model predictions on sample data...")
+    
+    # Test with various input patterns
+    test_cases = [
+        ([0.1, 0.2, 9.8, 0.01, 0.02, 0.01], "Small movement (should be No Step)"),
+        ([2.5, -1.2, 9.8, 0.3, 0.1, -0.2], "Normal walking step"),
+        ([4.0, -2.0, 8.5, 0.8, 0.3, -0.4], "Strong walking step"),
+    ]
+    
+    print(f"{'Test Case':<30} {'No Step':<10} {'Start':<10} {'End':<10}")
+    print("-" * 60)
+    
+    for data, description in test_cases:
+        input_data = np.array([data], dtype=np.float32)
+        predictions = model.predict(input_data, verbose=0)[0]
+        
+        print(f"{description:<30} {predictions[0]:<10.3f} {predictions[1]:<10.3f} {predictions[2]:<10.3f}")
+    
+    print("\n💡 Look for more balanced predictions (not 99%+ No Step)")
+
+
 def test_real_time_detection():
     """Test real-time detection with saved model."""
     print("\n🔬 Testing Real-time Detection")
@@ -283,12 +355,13 @@ def main():
     print("1. Train new model")
     print("2. Test real-time detection")
     print("3. Optimize detection thresholds")
-    print("4. Start API server")
-    print("5. Exit")
+    print("4. Retrain model with class balancing")
+    print("5. Start API server")
+    print("6. Exit")
 
     while True:
         try:
-            choice = input("\nEnter your choice (1-5): ").strip()
+            choice = input("\nEnter your choice (1-6): ").strip()
 
             if choice == "1":
                 train_new_model()
@@ -297,13 +370,15 @@ def main():
             elif choice == "3":
                 optimize_thresholds()
             elif choice == "4":
+                retrain_balanced_model()
+            elif choice == "5":
                 start_api_server()
                 break
-            elif choice == "5":
+            elif choice == "6":
                 print("👋 Goodbye!")
                 break
             else:
-                print("❌ Invalid choice. Please enter 1-5.")
+                print("❌ Invalid choice. Please enter 1-6.")
 
         except KeyboardInterrupt:
             print("\n👋 Goodbye!")

@@ -1,0 +1,14 @@
+{
+  "model_type": "CNN_Balanced",
+  "framework": "TensorFlow/Keras",
+  "input_shape": [
+    6
+  ],
+  "output_classes": 3,
+  "class_weights": {
+    "0": 0.3464102498442208,
+    "1": 17.660139251523063,
+    "2": 17.660139251523063
+  },
+  "epochs_trained": 50
+}
