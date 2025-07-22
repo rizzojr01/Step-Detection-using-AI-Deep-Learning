@@ -16,7 +16,7 @@ image = (
     image=image,
     # Optional: Mount persistent volume for models (uncomment if needed)
     # volumes={"/root/persistent_models": model_volume}
-    scaledown_window=900,
+    scaledown_window=600,
 )
 @modal.asgi_app()
 def fastapi_app():
