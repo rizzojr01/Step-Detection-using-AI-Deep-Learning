@@ -162,20 +162,22 @@ def retrain_balanced_model():
     print("=" * 40)
     print("This will address the issue where the model predicts 99%+ 'No Step'")
     print("by balancing the training data and using class weights.")
-    
+
     try:
         # Check if original model exists
         model_path = "models/step_detection_model.keras"
         if not os.path.exists(model_path):
-            print("⚠️ No existing model found. Training a new balanced model from scratch.")
+            print(
+                "⚠️ No existing model found. Training a new balanced model from scratch."
+            )
         else:
             print("📊 Existing model found. Will retrain with balanced approach.")
-        
+
         print("\n🔄 Starting balanced retraining process...")
-        
+
         # Call the balanced retraining function
         model = retrain_with_class_balance()
-        
+
         if model is not None:
             print("✅ Balanced model retraining completed successfully!")
             print("\n🎯 Key improvements made:")
@@ -183,16 +185,16 @@ def retrain_balanced_model():
             print("   • Used data augmentation for minority classes")
             print("   • Adjusted model architecture for better sensitivity")
             print("   • Optimized thresholds for real-world usage")
-            
+
             # Test the retrained model quickly
             print("\n🧪 Quick test of retrained model...")
             test_quick_predictions(model)
-            
+
             return True
         else:
             print("❌ Balanced retraining failed. Check the logs for details.")
             return False
-            
+
     except ImportError as e:
         print(f"❌ Import error: {e}")
         print("Make sure all required dependencies are installed.")
@@ -205,23 +207,25 @@ def retrain_balanced_model():
 def test_quick_predictions(model):
     """Quick test to verify the retrained model produces better predictions."""
     print("Testing model predictions on sample data...")
-    
+
     # Test with various input patterns
     test_cases = [
         ([0.1, 0.2, 9.8, 0.01, 0.02, 0.01], "Small movement (should be No Step)"),
         ([2.5, -1.2, 9.8, 0.3, 0.1, -0.2], "Normal walking step"),
         ([4.0, -2.0, 8.5, 0.8, 0.3, -0.4], "Strong walking step"),
     ]
-    
+
     print(f"{'Test Case':<30} {'No Step':<10} {'Start':<10} {'End':<10}")
     print("-" * 60)
-    
+
     for data, description in test_cases:
         input_data = np.array([data], dtype=np.float32)
         predictions = model.predict(input_data, verbose=0)[0]
-        
-        print(f"{description:<30} {predictions[0]:<10.3f} {predictions[1]:<10.3f} {predictions[2]:<10.3f}")
-    
+
+        print(
+            f"{description:<30} {predictions[0]:<10.3f} {predictions[1]:<10.3f} {predictions[2]:<10.3f}"
+        )
+
     print("\n💡 Look for more balanced predictions (not 99%+ No Step)")
 
 
@@ -240,7 +244,7 @@ def test_real_time_detection():
     try:
         # Initialize detectors with optimized thresholds
         # Based on threshold optimization results, using 0.15 for better balance
-        detector = StepDetector(model_path, start_threshold=0.15, end_threshold=0.15)
+        detector = StepDetector(model_path)
         counter = SimpleStepCounter(model_path, threshold=0.15)
 
         print("✅ Detectors initialized successfully!")
@@ -272,7 +276,7 @@ def test_real_time_detection():
         summary = detector.get_session_summary()
         print(f"Total readings: {summary['total_readings']}")
         print(f"Total steps: {summary['total_steps']}")
-        print(f"Simple counter: {counter.get_count()} steps")
+        print(f"Simple counter: {counter.step_count} steps")
 
         # Also test with some real validation data if available
         print("\n📊 Testing with real validation data...")
