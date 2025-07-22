@@ -248,26 +248,105 @@ async def websocket_endpoint(websocket: WebSocket):
                     sensor_data["gyro_z"],
                 )
 
-                # Log step detection details
-                start_prob = result["predictions"]["start_prob"]
-                end_prob = result["predictions"]["end_prob"]
+                # Extract raw model predictions for detailed logging
+                predictions = result["predictions"]
+                no_step_prob = 1.0 - predictions["start_prob"] - predictions["end_prob"]
+
+                # Get all the detection states
                 step_start = result["step_start"]
                 step_end = result["step_end"]
+                step_detected = result.get("step_detected", False)
                 step_count = result["step_count"]
 
-                # Clean logging with emojis
-                if step_start or step_end or "completed_step" in result:
-                    print(f"🦶 Step detected! Count: {step_count}")
-                else:
-                    print(f"⚪ No step | Count: {step_count}")
+                # Get sensitivity control info if available
+                sensitivity_info = result.get("sensitivity_control", {})
+                movement_magnitude = sensitivity_info.get("movement_magnitude", 0.0)
 
-                # Send response back to client
+                # Enhanced logging with raw model output
+                print("=" * 60)
+                print("🔍 RAW MODEL PREDICTIONS:")
+                print(f"   No Step: {no_step_prob:.6f}")
+                print(f"   Start:   {predictions['start_prob']:.6f}")
+                print(f"   End:     {predictions['end_prob']:.6f}")
+
+                print("📊 POST-PROCESSING:")
+                print(f"   Step Start: {step_start}")
+                print(f"   Step End: {step_end}")
+                print(f"   Step Detected (Enhanced): {step_detected}")
+                print(f"   Step Count: {step_count}")
+
+                print("📱 SENSOR INPUT:")
+                print(
+                    f"   Accel: ({sensor_data['accel_x']:.3f}, {sensor_data['accel_y']:.3f}, {sensor_data['accel_z']:.3f})"
+                )
+                print(
+                    f"   Gyro:  ({sensor_data['gyro_x']:.3f}, {sensor_data['gyro_y']:.3f}, {sensor_data['gyro_z']:.3f})"
+                )
+
+                if sensitivity_info:
+                    print("🎯 SENSITIVITY CONTROL:")
+                    print(f"   Movement Magnitude: {movement_magnitude:.3f}")
+                    print(
+                        f"   Confidence Threshold: {sensitivity_info.get('confidence_threshold', 'N/A')}"
+                    )
+                    print(
+                        f"   Magnitude Threshold: {sensitivity_info.get('magnitude_threshold', 'N/A')}"
+                    )
+                    print(
+                        f"   Passed Filters: {sensitivity_info.get('passed_filters', 'N/A')}"
+                    )
+
+                # Check detector's internal state
+                detector_state = getattr(detector, "current_step", None)
+                print("🔧 DETECTOR STATE:")
+                print(f"   Current Step in Progress: {detector_state is not None}")
+                if detector_state:
+                    print(
+                        f"   Step Start Time: {detector_state.get('start_time', 'N/A')}"
+                    )
+
+                # Log step detection with more detail
+                if step_start and not step_end:
+                    print("🟢 STEP START detected!")
+                elif step_end and not step_start:
+                    print("🔴 STEP END detected!")
+                elif step_start and step_end:
+                    print("🟡 BOTH START AND END detected (unusual)!")
+                elif step_detected:
+                    print("✅ STEP DETECTED (Enhanced logic)!")
+                else:
+                    print("⚪ No step detected")
+
+                # Check if step count changed
+                previous_count = getattr(websocket_endpoint, "_last_step_count", 0)
+                if step_count > previous_count:
+                    print(f"🎉 STEP COUNT INCREASED: {previous_count} → {step_count}")
+                    # websocket_endpoint._last_step_count = step_count
+                elif step_count == previous_count and (
+                    step_start or step_end or step_detected
+                ):
+                    print("⚠️  STEP DETECTED BUT COUNT NOT INCREASED!")
+
+                print("-" * 60)
+
+                # Send response back to client with enhanced information
                 response = {
-                    "step_start": bool(result["step_start"]),
-                    "step_end": bool(result["step_end"]),
-                    "start_probability": float(result["predictions"]["start_prob"]),
-                    "end_probability": float(result["predictions"]["end_prob"]),
-                    "step_count": int(result["step_count"]),
+                    "step_start": bool(step_start),
+                    "step_end": bool(step_end),
+                    "step_detected": bool(step_detected),
+                    "start_probability": float(predictions["start_prob"]),
+                    "end_probability": float(predictions["end_prob"]),
+                    "no_step_probability": float(no_step_prob),
+                    "max_confidence": float(
+                        predictions.get(
+                            "max_confidence",
+                            max(predictions["start_prob"], predictions["end_prob"]),
+                        )
+                    ),
+                    "predicted_class": int(predictions.get("predicted_class", 0)),
+                    "step_count": int(step_count),
+                    "movement_magnitude": float(movement_magnitude),
+                    "detector_has_current_step": detector_state is not None,
                     "timestamp": str(result["timestamp"]),
                     "status": "success",
                 }
@@ -279,6 +358,7 @@ async def websocket_endpoint(websocket: WebSocket):
                     json.dumps({"error": "Invalid JSON format", "status": "error"})
                 )
             except Exception as e:
+                print(f"❌ Processing error: {str(e)}")
                 await websocket.send_text(
                     json.dumps(
                         {"error": f"Processing error: {str(e)}", "status": "error"}

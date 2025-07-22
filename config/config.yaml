@@ -29,14 +29,10 @@ training:
 
 # Detection Configuration
 detection:
-  # Legacy thresholds (for backward compatibility)
-  start_threshold: 0.07
-  end_threshold: 0.07
   window_size: 50
-
-  # Enhanced sensitivity controls (NEW)
-  confidence_threshold: 0.7 # Minimum confidence for step detection
-  magnitude_threshold: 15.0 # Minimum movement magnitude (reduces phone shake false positives)
+  # Enhanced sensitivity controls
+  confidence_threshold: 0.1 # Minimum confidence for step detection
+  magnitude_threshold: 8.0 # Reduced from 15.0 to capture normal walking patterns
 
   # Model prediction thresholds
   prediction_confidence_min: 0.5 # Minimum confidence to consider any prediction
@@ -46,6 +42,11 @@ detection:
   enable_magnitude_filter: true # Enable/disable magnitude-based filtering
   enable_confidence_filter: true # Enable/disable confidence-based filtering
   temporal_smoothing: false # Enable temporal smoothing (future feature)
+
+  # Advanced filtering options
+  adaptive_magnitude: true # Adjust magnitude threshold based on recent activity
+  min_magnitude_threshold: 6.0 # Absolute minimum to filter out phone shakes
+  max_magnitude_threshold: 25.0 # Maximum to filter out extreme movements
 
 # Data Configuration
 data:
