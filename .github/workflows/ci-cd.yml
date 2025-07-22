@@ -3,7 +3,7 @@ name: CI/CD
 on:
   push:
     branches:
-      - implement_ci_cd
+      - main
 
 jobs:
   deploy:
