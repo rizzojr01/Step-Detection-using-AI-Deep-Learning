@@ -120,12 +120,12 @@ async def detect_step(reading: SensorReading):
         )
 
         return StepDetectionResponse(
-            step_start=result["step_start"],
-            step_end=result["step_end"],
+            step_start=result["step_start_detected"],
+            step_end=result["step_end_detected"],
             start_probability=result["predictions"]["start_prob"],
             end_probability=result["predictions"]["end_prob"],
             step_count=result["step_count"],
-            timestamp=result["timestamp"],
+            timestamp=str(result["timestamp"]),
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Detection error: {str(e)}")
@@ -134,24 +134,30 @@ async def detect_step(reading: SensorReading):
 @app.get("/step_count", response_model=StepCountResponse)
 async def get_step_count():
     """Get current step count."""
-    if counter is None:
+    if detector is None:
         raise HTTPException(status_code=503, detail="Model not loaded")
 
-    return StepCountResponse(
-        step_count=counter.get_count(), last_detection=counter.last_detection
-    )
+    return StepCountResponse(step_count=detector.get_step_count(), last_detection=None)
 
 
 @app.post("/reset_count")
 async def reset_step_count():
     """Reset step count."""
-    if counter is None:
+    print("🔄 Reset request received...")
+
+    if detector is None:
         raise HTTPException(status_code=503, detail="Model not loaded")
 
-    counter.reset()
-    if detector is not None:
-        detector.reset()
+    # Reset the primary detector (used by websocket)
+    print("🔄 Resetting detector...")
+    detector.reset()
 
+    # Also reset the counter if it exists (for consistency)
+    if counter is not None:
+        print("🔄 Resetting counter...")
+        counter.reset()
+
+    print("✅ Reset completed successfully")
     return {"message": "Step count reset", "step_count": 0}
 
 
@@ -188,8 +194,12 @@ async def get_model_info():
         "api_status": "active" if detector is not None else "model_not_loaded",
         "thresholds": (
             {
-                "start_threshold": detector.start_threshold if detector else None,
-                "end_threshold": detector.end_threshold if detector else None,
+                "confidence_threshold": (
+                    detector.confidence_threshold if detector else None
+                ),
+                "magnitude_threshold": (
+                    detector.magnitude_threshold if detector else None
+                ),
             }
             if detector
             else None
@@ -253,8 +263,8 @@ async def websocket_endpoint(websocket: WebSocket):
                 no_step_prob = 1.0 - predictions["start_prob"] - predictions["end_prob"]
 
                 # Get all the detection states
-                step_start = result["step_start"]
-                step_end = result["step_end"]
+                step_start = result["step_start_detected"]
+                step_end = result["step_end_detected"]
                 step_detected = result.get("step_detected", False)
                 step_count = result["step_count"]
 
@@ -297,19 +307,22 @@ async def websocket_endpoint(websocket: WebSocket):
                     )
 
                 # Check detector's internal state
-                detector_state = getattr(detector, "current_step", None)
+                detector_in_step = getattr(detector, "in_step", False)
                 print("🔧 DETECTOR STATE:")
-                print(f"   Current Step in Progress: {detector_state is not None}")
-                if detector_state:
-                    print(
-                        f"   Step Start Time: {detector_state.get('start_time', 'N/A')}"
-                    )
+                print(f"   Current Step in Progress: {detector_in_step}")
+                if detector_in_step:
+                    start_time = getattr(detector, "current_step_start_time", None)
+                    print(f"   Step Start Time: {start_time}")
 
                 # Log step detection with more detail
                 if step_start and not step_end:
                     print("🟢 STEP START detected!")
+                    if not detector_in_step:
+                        print("⚠️  STEP START BUT DETECTOR NOT IN STEP STATE!")
                 elif step_end and not step_start:
                     print("🔴 STEP END detected!")
+                    if not detector_in_step:
+                        print("⚠️  STEP END BUT DETECTOR NOT IN STEP STATE!")
                 elif step_start and step_end:
                     print("🟡 BOTH START AND END detected (unusual)!")
                 elif step_detected:
@@ -346,7 +359,7 @@ async def websocket_endpoint(websocket: WebSocket):
                     "predicted_class": int(predictions.get("predicted_class", 0)),
                     "step_count": int(step_count),
                     "movement_magnitude": float(movement_magnitude),
-                    "detector_has_current_step": detector_state is not None,
+                    "detector_has_current_step": detector_in_step,
                     "timestamp": str(result["timestamp"]),
                     "status": "success",
                 }

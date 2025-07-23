@@ -161,8 +161,9 @@ class StepDetector:
             self.step_timestamps.popleft()
 
         # Check if adding another step would exceed max rate
+        # We add 1 because we're checking if we can add a new step
         steps_in_window = len(self.step_timestamps)
-        return steps_in_window < self.max_step_rate
+        return (steps_in_window + 1) <= self.max_step_rate
 
     def _is_step_interval_valid(self, current_time: float) -> bool:
         """
@@ -204,9 +205,11 @@ class StepDetector:
         Args:
             current_time: Current timestamp
         """
+        # Always track step timestamps for consistency
+        self.step_timestamps.append(current_time)
+        self.last_step_time = current_time
+
         if self.enable_time_constraints:
-            self.step_timestamps.append(current_time)
-            self.last_step_time = current_time
             self.consecutive_rejections = 0
 
     def process_reading(
@@ -259,6 +262,7 @@ class StepDetector:
             "step_end_detected": False,
             "completed_step": False,
             "step_count": self.step_count,
+            "timestamp": current_time,
             "predictions": {
                 "no_step_prob": no_step_prob,
                 "start_prob": start_prob,
@@ -269,6 +273,11 @@ class StepDetector:
                 "movement_magnitude": movement_magnitude,
                 "magnitude_filter_passed": True,
                 "confidence_filter_passed": True,
+                "passed_filters": True,
+                "confidence_threshold": self.confidence_threshold,
+                "magnitude_threshold": self.magnitude_threshold,
+                "enable_magnitude_filter": self.enable_magnitude_filter,
+                "enable_confidence_filter": self.enable_confidence_filter,
             },
             "time_constraints": {
                 "enabled": self.enable_time_constraints,
@@ -295,38 +304,64 @@ class StepDetector:
             )
 
         # Apply magnitude filter
+        magnitude_passed = True
         if (
             self.enable_magnitude_filter
             and movement_magnitude < self.magnitude_threshold
         ):
             result["sensitivity_control"]["magnitude_filter_passed"] = False
-            return result
+            magnitude_passed = False
 
         # Apply confidence filter
+        confidence_passed = True
         if self.enable_confidence_filter and max_confidence < self.confidence_threshold:
             result["sensitivity_control"]["confidence_filter_passed"] = False
+            confidence_passed = False
+
+        # Update the passed_filters status (DEBUG: filters working)
+        result["sensitivity_control"]["passed_filters"] = (
+            magnitude_passed and confidence_passed
+        )
+
+        # If filters failed, return early
+        if not (magnitude_passed and confidence_passed):
             return result
 
+        # Update filter status for successful cases
+        result["sensitivity_control"]["magnitude_filter_passed"] = magnitude_passed
+        result["sensitivity_control"]["confidence_filter_passed"] = confidence_passed
+
+        # Decide between start and end detection when both exceed threshold
+        both_detected = (
+            start_prob > self.confidence_threshold
+            and end_prob > self.confidence_threshold
+        )
+
         # Detect step start
-        if start_prob > self.confidence_threshold:
+        if start_prob > self.confidence_threshold and (
+            not both_detected or start_prob >= end_prob
+        ):
             # Check time constraints for step start
             if self.enable_time_constraints:
                 rate_valid = self._is_step_rate_valid(current_time)
                 interval_valid = self._is_step_interval_valid(current_time)
                 result["time_constraints"]["step_rate_valid"] = rate_valid
                 result["time_constraints"]["step_interval_valid"] = interval_valid
+
                 if not rate_valid:
                     result["time_constraints"][
                         "rejection_reason"
-                    ] = "step_rate_exceeded"
+                    ] = "step_start_rate_exceeded"
                     self.consecutive_rejections += 1
                     return result
+
                 if not interval_valid:
                     result["time_constraints"][
                         "rejection_reason"
-                    ] = "step_interval_too_short"
+                    ] = "step_start_interval_too_short"
                     self.consecutive_rejections += 1
                     return result
+
             # Valid step start detected
             if not self.in_step:
                 self.in_step = True
@@ -335,7 +370,7 @@ class StepDetector:
                 result["step_start_detected"] = True
                 result["step_detected"] = True
 
-        # Detect step end
+        # Detect step end (only if not handling start, or if end has higher confidence)
         elif end_prob > self.confidence_threshold:
             if self.in_step and self.current_step_start_time is not None:
                 # Check step duration constraints
@@ -345,6 +380,7 @@ class StepDetector:
                         self.current_step_start_time, current_time
                     )
                     result["time_constraints"]["step_duration_valid"] = duration_valid
+
                     if not duration_valid:
                         step_duration = current_time - self.current_step_start_time
                         if step_duration < self.min_step_duration:
@@ -360,16 +396,47 @@ class StepDetector:
                         self.in_step = False
                         self.current_step_start_time = None
                         return result
+
+                # Check time constraints for step completion
+                if self.enable_time_constraints:
+                    rate_valid = self._is_step_rate_valid(current_time)
+                    interval_valid = self._is_step_interval_valid(current_time)
+                    result["time_constraints"]["step_rate_valid"] = rate_valid
+                    result["time_constraints"]["step_interval_valid"] = interval_valid
+
+                    if not rate_valid:
+                        result["time_constraints"][
+                            "rejection_reason"
+                        ] = "step_rate_exceeded"
+                        self.consecutive_rejections += 1
+                        # Reset step state but don't count as completed step
+                        self.in_step = False
+                        self.current_step_start_time = None
+                        return result
+
+                    if not interval_valid:
+                        result["time_constraints"][
+                            "rejection_reason"
+                        ] = "step_interval_too_short"
+                        self.consecutive_rejections += 1
+                        # Reset step state but don't count as completed step
+                        self.in_step = False
+                        self.current_step_start_time = None
+                        return result
+
                 # Valid step end detected - complete the step
                 self.in_step = False
                 self.step_end_count += 1
                 self.step_count += 1
+
                 # Register the step for time tracking
                 self._register_step(current_time)
+
                 result["step_end_detected"] = True
                 result["step_detected"] = True
                 result["completed_step"] = True
                 result["step_count"] = self.step_count
+
                 # Add step timing information
                 if self.current_step_start_time is not None:
                     step_duration = current_time - self.current_step_start_time
@@ -378,7 +445,9 @@ class StepDetector:
                         "end_time": current_time,
                         "duration": step_duration,
                     }
+
                 self.current_step_start_time = None
+
         return result
 
     def get_step_count(self) -> int:
@@ -388,18 +457,22 @@ class StepDetector:
     def get_session_summary(self) -> Dict:
         """Get a summary of the current detection session."""
         current_time = self._get_current_time()
+
         # Calculate session duration
         session_duration = current_time - (
             self.step_timestamps[0] if self.step_timestamps else current_time
         )
+
         # Calculate average step rate
         avg_step_rate = (
             self.step_count / session_duration if session_duration > 0 else 0.0
         )
+
         # Calculate recent step rate
         recent_cutoff = current_time - self.step_rate_window
         recent_steps = [t for t in self.step_timestamps if t >= recent_cutoff]
         recent_step_rate = len(recent_steps) / self.step_rate_window
+
         return {
             "total_readings": self.total_readings,
             "total_steps": self.step_count,
@@ -440,8 +513,10 @@ class StepDetector:
                 "max_step_duration": self.max_step_duration,
             },
         }
+
         with open(filename, "w") as f:
             json.dump(session_data, f, indent=2)
+
         print(f"Session data saved to {filename}")
 
 
@@ -551,15 +626,19 @@ class SimpleStepCounter:
 def load_model_info(model_path: str) -> Dict:
     """
     Load model information and metadata.
+
     Args:
         model_path: Path to the model file
+
     Returns:
         Dictionary with model information
     """
     try:
         if load_model is None:
             return {"error": "TensorFlow/Keras not available"}
+
         model = load_model(model_path)
+
         # Try to load metadata
         metadata_path = model_path.replace(".keras", "_metadata.json").replace(
             ".h5", "_metadata.json"
@@ -570,14 +649,12 @@ def load_model_info(model_path: str) -> Dict:
                 metadata = json.load(f)
         except FileNotFoundError:
             pass
-        total_params = None
-        if model is not None and not callable(model) and hasattr(model, "count_params"):
-            total_params = model.count_params()
+
         return {
             "model_loaded": True,
-            "input_shape": getattr(model, "input_shape", None),
-            "output_shape": getattr(model, "output_shape", None),
-            "total_params": total_params,
+            "input_shape": model.input_shape,
+            "output_shape": model.output_shape,
+            "total_params": model.count_params(),
             "metadata": metadata,
         }
     except Exception as e:
@@ -587,26 +664,32 @@ def load_model_info(model_path: str) -> Dict:
 if __name__ == "__main__":
     print("Step Detection Module")
     print("====================")
+
     # Example usage
     try:
         model_path = "models/step_detection_model.keras"
         detector = StepDetector(model_path)
+
         print(f"\n🧪 Testing with sample data...")
+
         # Test with sample sensor readings
         test_readings = [
             (0.1, 0.2, 9.8, 0.01, 0.02, 0.01),  # Small movement
             (2.5, -1.2, 9.8, 0.3, 0.1, -0.2),  # Step start
             (1.5, -0.8, 9.9, 0.2, 0.1, -0.1),  # Step end
         ]
+
         for i, reading in enumerate(test_readings, 1):
             result = detector.process_reading(*reading)
             print(
                 f"Reading {i}: Step detected: {result['step_detected']}, Count: {result['step_count']}"
             )
+
         print(f"\n📊 Session Summary:")
         summary = detector.get_session_summary()
         for key, value in summary.items():
             print(f"   {key}: {value}")
+
     except Exception as e:
         print(f"❌ Error: {e}")
         print("Make sure the model file exists and TensorFlow is installed")
