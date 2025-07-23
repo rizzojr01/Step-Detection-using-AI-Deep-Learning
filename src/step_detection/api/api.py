@@ -63,6 +63,7 @@ app.add_middleware(
 detector: Optional[StepDetector] = None
 counter: Optional[SimpleStepCounter] = None
 model_info: Dict = {}
+is_resetting = False  # Flag to block processing during reset
 
 
 @app.on_event("startup")
@@ -143,22 +144,29 @@ async def get_step_count():
 @app.post("/reset_count")
 async def reset_step_count():
     """Reset step count."""
-    print("🔄 Reset request received...")
+    global is_resetting
+    print("🔄 EMERGENCY RESET REQUEST RECEIVED VIA HTTP - STOPPING ALL PROCESSING")
 
     if detector is None:
         raise HTTPException(status_code=503, detail="Model not loaded")
 
+    # Set reset flag to block all processing
+    is_resetting = True
+
     # Reset the primary detector (used by websocket)
-    print("🔄 Resetting detector...")
+    print("🔄 Resetting detector state...")
     detector.reset()
 
     # Also reset the counter if it exists (for consistency)
     if counter is not None:
-        print("🔄 Resetting counter...")
+        print("🔄 Resetting counter state...")
         counter.reset()
 
-    print("✅ Reset completed successfully")
-    return {"message": "Step count reset", "step_count": 0}
+    # Clear reset flag
+    is_resetting = False
+    print("✅ COMPLETE RESET FINISHED VIA HTTP - Ready to start fresh from zero")
+    
+    return {"message": "Complete reset successful", "step_count": 0, "status": "reset_complete"}
 
 
 @app.get("/session_summary")
@@ -226,6 +234,52 @@ async def websocket_endpoint(websocket: WebSocket):
 
             try:
                 sensor_data = json.loads(data)
+
+                # Check if this is a reset command - IMMEDIATE PRIORITY
+                if sensor_data.get("action") == "reset":
+                    global is_resetting
+                    print("🔄 EMERGENCY RESET COMMAND RECEIVED - STOPPING ALL PROCESSING")
+                    
+                    # Set reset flag to block all other processing immediately
+                    is_resetting = True
+                    
+                    # Reset the detector completely
+                    print("🔄 Resetting detector state...")
+                    detector.reset()
+                    
+                    # Also reset the counter if it exists
+                    if counter is not None:
+                        print("🔄 Resetting counter state...")
+                        counter.reset()
+                    
+                    # Clear reset flag
+                    is_resetting = False
+                    print("✅ COMPLETE RESET FINISHED - Ready to start fresh from zero")
+                    
+                    # Send immediate confirmation response with zero values
+                    await websocket.send_text(
+                        json.dumps({
+                            "step_start": False,
+                            "step_end": False,
+                            "step_detected": False,
+                            "start_probability": 0.0,
+                            "end_probability": 0.0,
+                            "no_step_probability": 0.0,
+                            "max_confidence": 0.0,
+                            "predicted_class": 0,
+                            "step_count": 0,
+                            "movement_magnitude": 0.0,
+                            "detector_has_current_step": False,
+                            "timestamp": "",
+                            "status": "reset_complete"
+                        })
+                    )
+                    continue
+
+                # Check if we're currently resetting - block all sensor processing
+                if is_resetting:
+                    print("⏸️ Blocking sensor processing - reset in progress")
+                    continue
 
                 # Validate required fields
                 required_fields = [
