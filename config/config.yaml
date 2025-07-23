@@ -31,7 +31,7 @@ training:
 detection:
   window_size: 50
   # Enhanced sensitivity controls
-  confidence_threshold: 0.1 # Minimum confidence for step detection
+  confidence_threshold: 0.001 # Lowered to match model output range
   magnitude_threshold: 8.0 # Reduced from 15.0 to capture normal walking patterns
 
   # Model prediction thresholds
