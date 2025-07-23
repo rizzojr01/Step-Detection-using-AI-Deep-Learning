@@ -27,6 +27,11 @@ jobs:
           python -m pip install --upgrade pip
           pip install modal
 
+      - name: Prepare Git State
+        run: |
+          git reset --hard HEAD
+          git clean -fd
+
       - name: Deploy Modal App
         run: |
           modal deploy modal_app.py
