@@ -120,12 +120,12 @@ async def detect_step(reading: SensorReading):
         )
 
         return StepDetectionResponse(
-            step_start=result["step_start"],
-            step_end=result["step_end"],
+            step_start=result["step_start_detected"],
+            step_end=result["step_end_detected"],
             start_probability=result["predictions"]["start_prob"],
             end_probability=result["predictions"]["end_prob"],
             step_count=result["step_count"],
-            timestamp=result["timestamp"],
+            timestamp=str(result["timestamp"]),
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Detection error: {str(e)}")
@@ -137,9 +137,7 @@ async def get_step_count():
     if counter is None:
         raise HTTPException(status_code=503, detail="Model not loaded")
 
-    return StepCountResponse(
-        step_count=counter.get_count(), last_detection=counter.last_detection
-    )
+    return StepCountResponse(step_count=counter.get_step_count(), last_detection=None)
 
 
 @app.post("/reset_count")
@@ -188,8 +186,12 @@ async def get_model_info():
         "api_status": "active" if detector is not None else "model_not_loaded",
         "thresholds": (
             {
-                "start_threshold": detector.start_threshold if detector else None,
-                "end_threshold": detector.end_threshold if detector else None,
+                "confidence_threshold": (
+                    detector.confidence_threshold if detector else None
+                ),
+                "magnitude_threshold": (
+                    detector.magnitude_threshold if detector else None
+                ),
             }
             if detector
             else None
@@ -253,8 +255,8 @@ async def websocket_endpoint(websocket: WebSocket):
                 no_step_prob = 1.0 - predictions["start_prob"] - predictions["end_prob"]
 
                 # Get all the detection states
-                step_start = result["step_start"]
-                step_end = result["step_end"]
+                step_start = result["step_start_detected"]
+                step_end = result["step_end_detected"]
                 step_detected = result.get("step_detected", False)
                 step_count = result["step_count"]
 
