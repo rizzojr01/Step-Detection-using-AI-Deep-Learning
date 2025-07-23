@@ -144,14 +144,14 @@ async def get_step_count():
 async def reset_step_count():
     """Reset step count."""
     print("🔄 Reset request received...")
-    
+
     if detector is None:
         raise HTTPException(status_code=503, detail="Model not loaded")
 
     # Reset the primary detector (used by websocket)
     print("🔄 Resetting detector...")
     detector.reset()
-    
+
     # Also reset the counter if it exists (for consistency)
     if counter is not None:
         print("🔄 Resetting counter...")
