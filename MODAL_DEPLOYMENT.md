@@ -23,8 +23,8 @@ git clone https://github.com/rizzojr01/Step-Detection-using-AI-Deep-Learning.git
 cd Step-Detection-using-AI-Deep-Learning
 python3 -m venv venv && source venv/bin/activate
 
-# 2. Install dependencies
-pip install -r modal==1.0.0
+# 2. Install Modal
+pip install modal==1.0.0
 
 # 3. Authenticate with Modal
 modal token new
