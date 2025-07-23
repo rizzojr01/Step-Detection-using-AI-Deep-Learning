@@ -273,6 +273,11 @@ class StepDetector:
                 "movement_magnitude": movement_magnitude,
                 "magnitude_filter_passed": True,
                 "confidence_filter_passed": True,
+                "passed_filters": True,
+                "confidence_threshold": self.confidence_threshold,
+                "magnitude_threshold": self.magnitude_threshold,
+                "enable_magnitude_filter": self.enable_magnitude_filter,
+                "enable_confidence_filter": self.enable_confidence_filter,
             },
             "time_constraints": {
                 "enabled": self.enable_time_constraints,
@@ -299,20 +304,64 @@ class StepDetector:
             )
 
         # Apply magnitude filter
+        magnitude_passed = True
         if (
             self.enable_magnitude_filter
             and movement_magnitude < self.magnitude_threshold
         ):
             result["sensitivity_control"]["magnitude_filter_passed"] = False
-            return result
+            magnitude_passed = False
 
         # Apply confidence filter
+        confidence_passed = True
         if self.enable_confidence_filter and max_confidence < self.confidence_threshold:
             result["sensitivity_control"]["confidence_filter_passed"] = False
+            confidence_passed = False
+
+        # Update the passed_filters status (DEBUG: filters working)
+        result["sensitivity_control"]["passed_filters"] = (
+            magnitude_passed and confidence_passed
+        )
+
+        # If filters failed, return early
+        if not (magnitude_passed and confidence_passed):
             return result
 
+        # Update filter status for successful cases
+        result["sensitivity_control"]["magnitude_filter_passed"] = magnitude_passed
+        result["sensitivity_control"]["confidence_filter_passed"] = confidence_passed
+
+        # Decide between start and end detection when both exceed threshold
+        both_detected = (
+            start_prob > self.confidence_threshold
+            and end_prob > self.confidence_threshold
+        )
+
         # Detect step start
-        if start_prob > self.confidence_threshold:
+        if start_prob > self.confidence_threshold and (
+            not both_detected or start_prob >= end_prob
+        ):
+            # Check time constraints for step start
+            if self.enable_time_constraints:
+                rate_valid = self._is_step_rate_valid(current_time)
+                interval_valid = self._is_step_interval_valid(current_time)
+                result["time_constraints"]["step_rate_valid"] = rate_valid
+                result["time_constraints"]["step_interval_valid"] = interval_valid
+
+                if not rate_valid:
+                    result["time_constraints"][
+                        "rejection_reason"
+                    ] = "step_start_rate_exceeded"
+                    self.consecutive_rejections += 1
+                    return result
+
+                if not interval_valid:
+                    result["time_constraints"][
+                        "rejection_reason"
+                    ] = "step_start_interval_too_short"
+                    self.consecutive_rejections += 1
+                    return result
+
             # Valid step start detected
             if not self.in_step:
                 self.in_step = True
@@ -321,7 +370,7 @@ class StepDetector:
                 result["step_start_detected"] = True
                 result["step_detected"] = True
 
-        # Detect step end
+        # Detect step end (only if not handling start, or if end has higher confidence)
         elif end_prob > self.confidence_threshold:
             if self.in_step and self.current_step_start_time is not None:
                 # Check step duration constraints

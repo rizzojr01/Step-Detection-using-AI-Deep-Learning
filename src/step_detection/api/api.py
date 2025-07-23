@@ -299,19 +299,22 @@ async def websocket_endpoint(websocket: WebSocket):
                     )
 
                 # Check detector's internal state
-                detector_state = getattr(detector, "current_step", None)
+                detector_in_step = getattr(detector, "in_step", False)
                 print("🔧 DETECTOR STATE:")
-                print(f"   Current Step in Progress: {detector_state is not None}")
-                if detector_state:
-                    print(
-                        f"   Step Start Time: {detector_state.get('start_time', 'N/A')}"
-                    )
+                print(f"   Current Step in Progress: {detector_in_step}")
+                if detector_in_step:
+                    start_time = getattr(detector, "current_step_start_time", None)
+                    print(f"   Step Start Time: {start_time}")
 
                 # Log step detection with more detail
                 if step_start and not step_end:
                     print("🟢 STEP START detected!")
+                    if not detector_in_step:
+                        print("⚠️  STEP START BUT DETECTOR NOT IN STEP STATE!")
                 elif step_end and not step_start:
                     print("🔴 STEP END detected!")
+                    if not detector_in_step:
+                        print("⚠️  STEP END BUT DETECTOR NOT IN STEP STATE!")
                 elif step_start and step_end:
                     print("🟡 BOTH START AND END detected (unusual)!")
                 elif step_detected:
@@ -348,7 +351,7 @@ async def websocket_endpoint(websocket: WebSocket):
                     "predicted_class": int(predictions.get("predicted_class", 0)),
                     "step_count": int(step_count),
                     "movement_magnitude": float(movement_magnitude),
-                    "detector_has_current_step": detector_state is not None,
+                    "detector_has_current_step": detector_in_step,
                     "timestamp": str(result["timestamp"]),
                     "status": "success",
                 }
