@@ -134,10 +134,10 @@ async def detect_step(reading: SensorReading):
 @app.get("/step_count", response_model=StepCountResponse)
 async def get_step_count():
     """Get current step count."""
-    if counter is None:
+    if detector is None:
         raise HTTPException(status_code=503, detail="Model not loaded")
 
-    return StepCountResponse(step_count=counter.get_step_count(), last_detection=None)
+    return StepCountResponse(step_count=detector.get_step_count(), last_detection=None)
 
 
 @app.post("/reset_count")
