@@ -245,7 +245,7 @@ def test_real_time_detection():
         # Initialize detectors with optimized thresholds
         # Based on threshold optimization results, using 0.15 for better balance
         detector = StepDetector(model_path)
-        counter = SimpleStepCounter(model_path, threshold=0.15)
+        counter = SimpleStepCounter(model_path)
 
         print("✅ Detectors initialized successfully!")
         print(f"Using optimized thresholds: start=0.15, end=0.15")

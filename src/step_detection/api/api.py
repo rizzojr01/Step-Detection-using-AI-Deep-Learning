@@ -12,6 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from ..core.detector import SimpleStepCounter, StepDetector, load_model_info
+from ..utils.config import get_config
 
 
 class SensorReading(BaseModel):
@@ -63,13 +64,19 @@ app.add_middleware(
 detector: Optional[StepDetector] = None
 counter: Optional[SimpleStepCounter] = None
 model_info: Dict = {}
+config = None  # Configuration object
 is_resetting = False  # Flag to block processing during reset
+_last_step_count = 0  # Track step count changes
+_raw_model_step_count = 0  # Track raw model detections
 
 
 @app.on_event("startup")
 async def startup_event():
     """Initialize detectors on startup."""
-    global detector, counter, model_info
+    global detector, counter, model_info, config
+
+    # Load configuration
+    config = get_config()
 
     model_path = "models/step_detection_model.keras"
     metadata_path = "models/model_metadata.json"
@@ -162,11 +169,20 @@ async def reset_step_count():
         print("🔄 Resetting counter state...")
         counter.reset()
 
+    # Reset tracking variables
+    global _raw_model_step_count, _last_step_count
+    _raw_model_step_count = 0
+    _last_step_count = 0
+
     # Clear reset flag
     is_resetting = False
     print("✅ COMPLETE RESET FINISHED VIA HTTP - Ready to start fresh from zero")
-    
-    return {"message": "Complete reset successful", "step_count": 0, "status": "reset_complete"}
+
+    return {
+        "message": "Complete reset successful",
+        "step_count": 0,
+        "status": "reset_complete",
+    }
 
 
 @app.get("/session_summary")
@@ -218,6 +234,8 @@ async def get_model_info():
 @app.websocket("/ws/realtime")
 async def websocket_endpoint(websocket: WebSocket):
     """WebSocket endpoint for real-time step detection."""
+    global _raw_model_step_count, _last_step_count, is_resetting
+
     await websocket.accept()
 
     if detector is None:
@@ -237,42 +255,49 @@ async def websocket_endpoint(websocket: WebSocket):
 
                 # Check if this is a reset command - IMMEDIATE PRIORITY
                 if sensor_data.get("action") == "reset":
-                    global is_resetting
-                    print("🔄 EMERGENCY RESET COMMAND RECEIVED - STOPPING ALL PROCESSING")
-                    
+                    print(
+                        "🔄 EMERGENCY RESET COMMAND RECEIVED - STOPPING ALL PROCESSING"
+                    )
+
                     # Set reset flag to block all other processing immediately
                     is_resetting = True
-                    
+
                     # Reset the detector completely
                     print("🔄 Resetting detector state...")
                     detector.reset()
-                    
+
                     # Also reset the counter if it exists
                     if counter is not None:
                         print("🔄 Resetting counter state...")
                         counter.reset()
-                    
+
+                    # Reset tracking variables
+                    _raw_model_step_count = 0
+                    _last_step_count = 0
+
                     # Clear reset flag
                     is_resetting = False
                     print("✅ COMPLETE RESET FINISHED - Ready to start fresh from zero")
-                    
+
                     # Send immediate confirmation response with zero values
                     await websocket.send_text(
-                        json.dumps({
-                            "step_start": False,
-                            "step_end": False,
-                            "step_detected": False,
-                            "start_probability": 0.0,
-                            "end_probability": 0.0,
-                            "no_step_probability": 0.0,
-                            "max_confidence": 0.0,
-                            "predicted_class": 0,
-                            "step_count": 0,
-                            "movement_magnitude": 0.0,
-                            "detector_has_current_step": False,
-                            "timestamp": "",
-                            "status": "reset_complete"
-                        })
+                        json.dumps(
+                            {
+                                "step_start": False,
+                                "step_end": False,
+                                "step_detected": False,
+                                "start_probability": 0.0,
+                                "end_probability": 0.0,
+                                "no_step_probability": 0.0,
+                                "max_confidence": 0.0,
+                                "predicted_class": 0,
+                                "step_count": 0,
+                                "movement_magnitude": 0.0,
+                                "detector_has_current_step": False,
+                                "timestamp": "",
+                                "status": "reset_complete",
+                            }
+                        )
                     )
                     continue
 
@@ -327,76 +352,73 @@ async def websocket_endpoint(websocket: WebSocket):
                 movement_magnitude = sensitivity_info.get("movement_magnitude", 0.0)
 
                 # Enhanced logging with raw model output
-                print("=" * 60)
-                print("🔍 RAW MODEL PREDICTIONS:")
-                print(f"   No Step: {no_step_prob:.6f}")
-                print(f"   Start:   {predictions['start_prob']:.6f}")
-                print(f"   End:     {predictions['end_prob']:.6f}")
-
-                print("📊 POST-PROCESSING:")
-                print(f"   Step Start: {step_start}")
-                print(f"   Step End: {step_end}")
-                print(f"   Step Detected (Enhanced): {step_detected}")
-                print(f"   Step Count: {step_count}")
-
-                print("📱 SENSOR INPUT:")
-                print(
-                    f"   Accel: ({sensor_data['accel_x']:.3f}, {sensor_data['accel_y']:.3f}, {sensor_data['accel_z']:.3f})"
+                # Log raw model step detection (before time filtering)
+                confidence_threshold = (
+                    detector.confidence_threshold
+                    if hasattr(detector, "confidence_threshold")
+                    else 0.5
                 )
-                print(
-                    f"   Gyro:  ({sensor_data['gyro_x']:.3f}, {sensor_data['gyro_y']:.3f}, {sensor_data['gyro_z']:.3f})"
+                raw_step_start = predictions["start_prob"] > confidence_threshold
+                raw_step_end = predictions["end_prob"] > confidence_threshold
+
+                # Track raw model detections
+                if raw_step_start or raw_step_end:
+                    _raw_model_step_count += 1
+
+                # Only log when there's actual step activity (if enabled in config)
+                should_log = (config and config.is_step_detection_logs_enabled()) and (
+                    not (config and config.should_log_only_on_activity())
+                    or raw_step_start
+                    or raw_step_end
+                    or step_start
+                    or step_end
+                    or step_detected
                 )
 
-                if sensitivity_info:
-                    print("🎯 SENSITIVITY CONTROL:")
-                    print(f"   Movement Magnitude: {movement_magnitude:.3f}")
+                if should_log:
+                    print("=" * 60)
                     print(
-                        f"   Confidence Threshold: {sensitivity_info.get('confidence_threshold', 'N/A')}"
-                    )
-                    print(
-                        f"   Magnitude Threshold: {sensitivity_info.get('magnitude_threshold', 'N/A')}"
-                    )
-                    print(
-                        f"   Passed Filters: {sensitivity_info.get('passed_filters', 'N/A')}"
+                        f"💾 PROBABILITIES: Start={predictions['start_prob']:.3f}, End={predictions['end_prob']:.3f}"
                     )
 
-                # Check detector's internal state
+                    # Show confidence threshold if enabled in config
+                    if config and config.should_show_confidence_threshold():
+                        print(f"🎯 CONFIDENCE THRESHOLD: {confidence_threshold:.3f}")
+
+                    # Show raw model tracking if enabled in config
+                    if config and config.is_raw_model_tracking_enabled():
+                        print(
+                            f"🤖 RAW MODEL: Start={raw_step_start}, End={raw_step_end}, RAW COUNT={_raw_model_step_count}"
+                        )
+
+                    print(
+                        f"📊 FILTERED: Start={step_start}, End={step_end}, FILTERED COUNT={step_count}"
+                    )
+
+                    # Compare before vs after filtering (only if raw model tracking is enabled)
+                    if config and config.is_raw_model_tracking_enabled():
+                        if (raw_step_start or raw_step_end) and not (
+                            step_start or step_end
+                        ):
+                            pass
+                            # Check what type of filter blocked it
+                            # if not (config and config.is_time_filter_enabled()):
+                            #     print("⚠️  NON-TIME FILTER BLOCKED MODEL DETECTION!")
+                            # else:
+                            #     print("⚠️  TIME FILTER BLOCKED MODEL DETECTION!")
+                        elif (raw_step_start or raw_step_end) and (
+                            step_start or step_end
+                        ):
+                            pass
+                            # print("✅ FILTERS PASSED MODEL DETECTION")
+
+                    if step_count > _last_step_count:
+                        print(f"🚀 STEP COUNT INCREASED TO: {step_count}")
+                        _last_step_count = step_count
+                    print("-" * 60)
+
+                # Get detector state for response
                 detector_in_step = getattr(detector, "in_step", False)
-                print("🔧 DETECTOR STATE:")
-                print(f"   Current Step in Progress: {detector_in_step}")
-                if detector_in_step:
-                    start_time = getattr(detector, "current_step_start_time", None)
-                    print(f"   Step Start Time: {start_time}")
-
-                # Log step detection with more detail
-                if step_start and not step_end:
-                    print("🟢 STEP START detected!")
-                    if not detector_in_step:
-                        print("⚠️  STEP START BUT DETECTOR NOT IN STEP STATE!")
-                elif step_end and not step_start:
-                    print("🔴 STEP END detected!")
-                    if not detector_in_step:
-                        print("⚠️  STEP END BUT DETECTOR NOT IN STEP STATE!")
-                elif step_start and step_end:
-                    print("🟡 BOTH START AND END detected (unusual)!")
-                elif step_detected:
-                    print("✅ STEP DETECTED (Enhanced logic)!")
-                else:
-                    print("⚪ No step detected")
-
-                # Check if step count changed
-                previous_count = getattr(websocket_endpoint, "_last_step_count", 0)
-                if step_count > previous_count:
-                    print(f"🎉 STEP COUNT INCREASED: {previous_count} → {step_count}")
-                    # websocket_endpoint._last_step_count = step_count
-                elif step_count == previous_count and (
-                    step_start or step_end or step_detected
-                ):
-                    print("⚠️  STEP DETECTED BUT COUNT NOT INCREASED!")
-
-                print("-" * 60)
-
-                # Send response back to client with enhanced information
                 response = {
                     "step_start": bool(step_start),
                     "step_end": bool(step_end),

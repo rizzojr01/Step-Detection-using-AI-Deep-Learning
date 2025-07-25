@@ -4,69 +4,41 @@ from collections import deque
 from typing import Dict, List, Optional, Tuple
 
 import numpy as np
+from tensorflow.keras.models import load_model
 
-try:
-    from tensorflow.keras.models import load_model
-except ImportError:
-    try:
-        from keras.models import load_model
-    except ImportError:
-        load_model = None
-
-from ..utils.config import get_config
+from ..utils.config import Config, get_config
 
 
 class StepDetector:
-    """
-    Enhanced step detector with sensitivity controls and time constraints
-    to prevent unrealistic step detection rates.
-    """
 
-    def __init__(
-        self,
-        model_path: str,
-        confidence_threshold: Optional[float] = None,
-        magnitude_threshold: Optional[float] = None,
-        metadata_path: Optional[str] = None,
-        config_path: Optional[str] = None,
-        # Time constraint parameters
-        min_step_interval: float = 0.3,  # Minimum 300ms between steps (max ~3.3 steps/sec)
-        max_step_rate: float = 4.0,  # Maximum 4 steps per second
-        step_rate_window: float = 1.0,  # Time window for rate calculation (1 second)
-        min_step_duration: float = 0.1,  # Minimum step duration (100ms)
-        max_step_duration: float = 2.0,  # Maximum step duration (2 seconds)
-        enable_time_constraints: bool = True,  # Enable/disable time constraints
-    ):
-        """
-        Initialize the step detector with enhanced sensitivity controls and time constraints.
+    def __init__(self, model_path: str, metadata_path: Optional[str] = None):
 
-        Args:
-            model_path: Path to the saved TensorFlow model
-            confidence_threshold: Minimum confidence for step detection (overrides config)
-            magnitude_threshold: Minimum movement magnitude required (overrides config)
-            metadata_path: Optional path to model metadata JSON for optimal parameters
-            config_path: Optional path to config.yaml file
-            min_step_interval: Minimum time between consecutive steps (seconds)
-            max_step_rate: Maximum steps per second allowed
-            step_rate_window: Time window for calculating step rate (seconds)
-            min_step_duration: Minimum duration for a complete step (seconds)
-            max_step_duration: Maximum duration for a complete step (seconds)
-            enable_time_constraints: Whether to enable time constraint validation
-        """
-        if load_model is None:
-            raise ImportError("Could not import keras load_model function")
         self.model = load_model(model_path)
 
         # Load configuration
-        self.config = get_config(config_path)
+        self.config = Config()
 
-        # Initialize thresholds from config, then override with parameters
-        self.confidence_threshold = (
-            confidence_threshold or self.config.get_confidence_threshold()
-        )
-        self.magnitude_threshold = (
-            magnitude_threshold or self.config.get_magnitude_threshold()
-        )
+        # Initialize thresholds from config
+        self.confidence_threshold = self.config.get_confidence_threshold()
+        self.magnitude_threshold = self.config.get_magnitude_threshold()
+
+        # Get filter settings from config
+        self.enable_magnitude_filter = self.config.is_magnitude_filter_enabled()
+        self.enable_confidence_filter = self.config.is_confidence_filter_enabled()
+        self.enable_time_constraints = self.config.is_time_filter_enabled()
+
+        # Use config values for time parameters, but allow parameter overrides
+        self.min_step_interval = self.config.get_min_step_interval()
+
+        self.step_timeout = self.config.get_step_timeout()
+
+        self.max_step_rate = self.config.get_max_step_rate()
+
+        self.step_rate_window = self.config.get_step_rate_window()
+
+        self.min_step_duration = self.config.get_min_step_duration()
+
+        self.max_step_duration = self.config.get_max_step_duration()
 
         # Load optimal thresholds from metadata if available (overrides config)
         if metadata_path:
@@ -83,18 +55,6 @@ class StepDetector:
                     print(f"   Magnitude: {self.magnitude_threshold}")
             except (FileNotFoundError, json.JSONDecodeError):
                 print("⚠️  Could not load metadata, using config/parameter values")
-
-        # Get filter settings from config
-        self.enable_magnitude_filter = self.config.is_magnitude_filter_enabled()
-        self.enable_confidence_filter = self.config.is_confidence_filter_enabled()
-
-        # Time constraint parameters
-        self.enable_time_constraints = enable_time_constraints
-        self.min_step_interval = min_step_interval
-        self.max_step_rate = max_step_rate
-        self.step_rate_window = step_rate_window
-        self.min_step_duration = min_step_duration
-        self.max_step_duration = max_step_duration
 
         # Time tracking variables
         self.last_step_time = 0.0
@@ -114,10 +74,10 @@ class StepDetector:
 
         if self.enable_time_constraints:
             print(f"🕒 Time constraints enabled:")
-            print(f"   Min step interval: {min_step_interval}s")
-            print(f"   Max step rate: {max_step_rate} steps/sec")
+            print(f"   Min step interval: {self.min_step_interval}s")
+            print(f"   Max step rate: {self.max_step_rate} steps/sec")
             print(
-                f"   Step duration range: {min_step_duration}s - {max_step_duration}s"
+                f"   Step duration range: {self.min_step_duration}s - {self.max_step_duration}s"
             )
         else:
             print("⏰ Time constraints disabled")
@@ -137,10 +97,6 @@ class StepDetector:
         self.current_step_start_time = None
         self.step_timestamps.clear()
         self.consecutive_rejections = 0
-
-    def _get_current_time(self) -> float:
-        """Get current timestamp."""
-        return time.time()
 
     def _is_step_rate_valid(self, current_time: float) -> bool:
         """
@@ -220,20 +176,22 @@ class StepDetector:
         gyro_x: float,
         gyro_y: float,
         gyro_z: float,
-        timestamp: Optional[float] = None,
     ) -> Dict:
-        """
-        Process a single sensor reading with time constraints.
 
-        Args:
-            accel_x, accel_y, accel_z: Accelerometer readings (m/s²)
-            gyro_x, gyro_y, gyro_z: Gyroscope readings (rad/s)
-            timestamp: Optional timestamp (uses current time if None)
+        current_time = time.time()
 
-        Returns:
-            Dictionary containing detection results and time constraint info
-        """
-        current_time = timestamp if timestamp is not None else self._get_current_time()
+        # Check for step timeout - automatically timeout steps that take too long
+        if (
+            self.enable_time_constraints
+            and self.in_step
+            and self.current_step_start_time is not None
+        ):
+            step_duration = current_time - self.current_step_start_time
+            if step_duration > self.max_step_duration:
+                # Step has timed out - reset step state
+                self.in_step = False
+                self.current_step_start_time = None
+                # Note: Don't increment step count for timed out steps
 
         # Increment reading counter
         self.total_readings += 1
@@ -254,6 +212,10 @@ class StepDetector:
         start_prob = float(predictions[1])
         end_prob = float(predictions[2])
         max_confidence = max(start_prob, end_prob)
+
+        print(
+            f"No Step Probability: {no_step_prob:.5f}  Start Probability: {start_prob:.5f}  End Probability: {end_prob:.5f}  Max Confidence: {max_confidence:.5f}"
+        )
 
         # Initialize result structure
         result = {
@@ -526,8 +488,6 @@ class SimpleStepCounter:
     def __init__(
         self,
         model_path: str,
-        threshold: Optional[float] = None,
-        magnitude_threshold: Optional[float] = None,
         config_path: Optional[str] = None,
     ):
         """
@@ -535,7 +495,7 @@ class SimpleStepCounter:
 
         Args:
             model_path: Path to the saved TensorFlow model
-            threshold: Confidence threshold for detecting steps (overrides config)
+            confidence_threshold: Confidence threshold for detecting steps (overrides config)
             magnitude_threshold: Minimum movement magnitude (overrides config)
             config_path: Optional path to config.yaml file
         """
@@ -547,16 +507,14 @@ class SimpleStepCounter:
         self.config = get_config(config_path)
 
         # Set thresholds from config or parameters
-        self.threshold = threshold or self.config.get_confidence_threshold()
-        self.magnitude_threshold = (
-            magnitude_threshold or self.config.get_magnitude_threshold()
-        )
+        self.confidence_threshold = self.config.get_confidence_threshold()
+        self.magnitude_threshold = self.config.get_magnitude_threshold()
 
         # Get filter settings from config
         self.enable_magnitude_filter = self.config.is_magnitude_filter_enabled()
 
         print(f"🔧 SimpleStepCounter initialized with:")
-        print(f"   Confidence threshold: {self.threshold}")
+        print(f"   Confidence threshold: {self.confidence_threshold}")
         print(f"   Magnitude threshold: {self.magnitude_threshold}")
         print(
             f"   Magnitude filter: {'enabled' if self.enable_magnitude_filter else 'disabled'}"
@@ -597,7 +555,7 @@ class SimpleStepCounter:
 
         # Simple step detection
         step_detected = False
-        if max_confidence > self.threshold:
+        if max_confidence > self.confidence_threshold:
             if (
                 not self.enable_magnitude_filter
                 or movement_magnitude >= self.magnitude_threshold
@@ -610,7 +568,7 @@ class SimpleStepCounter:
             "step_count": self.step_count,
             "confidence": float(max_confidence),
             "movement_magnitude": float(movement_magnitude),
-            "threshold": self.threshold,
+            "threshold": self.confidence_threshold,
             "magnitude_threshold": self.magnitude_threshold,
         }
 

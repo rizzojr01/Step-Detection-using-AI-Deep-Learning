@@ -39,9 +39,18 @@ detection:
   step_class_threshold: 0.6 # Specific threshold for step classes (1=start, 2=end)
 
   # Filtering parameters
-  enable_magnitude_filter: true # Enable/disable magnitude-based filtering
-  enable_confidence_filter: true # Enable/disable confidence-based filtering
+  enable_magnitude_filter: false # Enable/disable magnitude-based filtering
+  enable_confidence_filter: false # Enable/disable confidence-based filtering
+  enable_time_filter: false # Enable/disable time-based filtering between steps
   temporal_smoothing: false # Enable temporal smoothing (future feature)
+
+  # Time filtering parameters
+  min_step_interval: 0.3 # Minimum time (seconds) between step detections
+  step_timeout: 2.0 # Maximum time (seconds) a step can remain "in progress"
+  max_step_rate: 4.0 # Maximum steps per second allowed
+  step_rate_window: 1.0 # Time window for rate calculation (seconds)
+  min_step_duration: 0.1 # Minimum step duration (seconds)
+  max_step_duration: 2.0 # Maximum step duration (seconds)
 
   # Advanced filtering options
   adaptive_magnitude: true # Adjust magnitude threshold based on recent activity
@@ -67,3 +76,10 @@ logging:
   level: "INFO"
   format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
   log_file: "logs/step_detection.log"
+
+# Debug Configuration
+debug:
+  enable_step_detection_logs: true # Enable detailed step detection logging
+  enable_raw_model_tracking: true # Track raw model detections vs filtered
+  log_only_on_activity: false # Only log when step activity is detected
+  show_confidence_threshold: true # Show confidence threshold in logs
