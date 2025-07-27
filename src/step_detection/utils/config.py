@@ -128,12 +128,24 @@ class Config:
         return self.get("detection.magnitude_threshold", 15.0)
 
     def get_start_threshold(self) -> float:
-        """Get legacy start threshold."""
-        return self.get("detection.start_threshold", 0.07)
+        """Get start threshold for step detection."""
+        return self.get("detection.start_threshold", 0.3)
 
     def get_end_threshold(self) -> float:
-        """Get legacy end threshold."""
-        return self.get("detection.end_threshold", 0.07)
+        """Get end threshold for step detection."""
+        return self.get("detection.end_threshold", 0.3)
+
+    def get_motion_threshold(self) -> float:
+        """Get motion threshold for step detection."""
+        return self.get("detection.motion_threshold", 12.0)
+
+    def get_gyro_threshold(self) -> float:
+        """Get gyro threshold for step detection."""
+        return self.get("detection.gyro_threshold", 1.0)
+
+    def get_window_size(self) -> int:
+        """Get sensor buffer window size."""
+        return self.get("detection.window_size", 10)
 
     # Detection filter settings
 

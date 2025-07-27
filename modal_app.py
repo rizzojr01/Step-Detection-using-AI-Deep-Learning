@@ -15,10 +15,9 @@ image = (
     image=image,
     scaledown_window=600,
     max_containers=3,
-    concurrency_limit=3,
 )
 @modal.asgi_app()
 def fastapi_app():
-    from src.step_detection.api.api import app as fastapi_app
+    from main import app as fastapi_app
 
     return fastapi_app
