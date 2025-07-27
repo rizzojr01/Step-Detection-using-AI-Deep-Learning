@@ -7,12 +7,31 @@ detection:
   start_threshold: 0.3 # Threshold for step start detection
   end_threshold: 0.3 # Threshold for step end detection
 
-  # Motion detection thresholds
-  motion_threshold: 12.0 # Acceleration magnitude threshold for step detection
-  gyro_threshold: 1.0 # Gyroscope magnitude threshold for step detection
+  # Motion detection thresholds (balanced for accuracy)
+  motion_threshold: 11.0 # Acceleration magnitude threshold for step detection (above gravity + margin)
+  gyro_threshold: 1.5 # Gyroscope magnitude threshold for step detection (increased to reduce false positives)
 
   # Timing constraints
-  min_step_interval: 0.8 # Minimum time (seconds) between step detections
+  min_step_interval: 0.4 # Minimum time (seconds) between step detections
+
+  # Advanced filtering to reduce false positives (made less restrictive)
+  enable_motion_variance_filter: true # Only detect steps with varying motion patterns
+  min_motion_variance: 1.0 # Minimum variance in motion to consider it walking (lowered from 2.0)
+  enable_stillness_detection: true # Detect when user is stationary
+  stillness_threshold: 0.8 # Max motion variance when considered "still" (lowered from 1.5)
+
+  # Advanced detection settings (less restrictive)
+  enable_peak_detection: true # Enable peak-based detection for better accuracy
+  enable_adaptive_thresholds: false # Disable adaptive thresholds to prevent over-adjustment
+  motion_sensitivity: 0.9 # Sensitivity multiplier (closer to 1.0 = less adjustment)
+
+  # Hybrid detection mode
+  enable_hybrid_detection: true # Use multiple detection methods
+  require_all_conditions: false # Don't require ALL conditions (OR logic instead of AND)
+
+  # Peak detection parameters
+  peak_prominence: 2.0 # Minimum prominence for peak detection
+  peak_distance: 5 # Minimum distance between peaks (in samples)
 
   # Buffer settings
   processing_buffer_size: 100 # Size of processing times buffer

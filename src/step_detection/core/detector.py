@@ -52,6 +52,16 @@ class RealTimeStepCounter:
         self.last_step_time = None
         self.step_timestamps = []
 
+        # Enhanced detection tracking
+        self.recent_magnitudes = deque(
+            maxlen=20
+        )  # Track recent motion for adaptive thresholds
+        self.baseline_motion = 0.0  # Baseline motion level
+        self.peak_buffer = deque(maxlen=10)  # Buffer for peak detection
+        self.motion_variance_buffer = deque(maxlen=15)  # Buffer for motion variance calculation
+        self.is_stationary = False  # Track if user appears to be stationary
+        self.stationary_count = 0  # Count of consecutive low-variance readings
+
         # Performance metrics
         buffer_size = self.config.get("detection.processing_buffer_size", 100)
         self.processing_times = deque(maxlen=buffer_size)
@@ -139,10 +149,16 @@ class RealTimeStepCounter:
         previous_steps = self.total_steps
         self.sensor_buffer.clear()
         self.prediction_buffer.clear()
+        self.recent_magnitudes.clear()
+        self.peak_buffer.clear()
+        self.motion_variance_buffer.clear()
         self.total_steps = 0
         self.in_step = False
         self.last_step_time = None
         self.step_timestamps.clear()
+        self.baseline_motion = 0.0
+        self.is_stationary = False
+        self.stationary_count = 0
 
         print(f"🔄 STEP COUNTER RESET (was {previous_steps} steps)")
         print("   📊 All buffers cleared, counters reset to 0")
@@ -181,21 +197,133 @@ class RealTimeStepCounter:
                 + current_reading[5] ** 2
             ) ** 0.5
 
-            # Simple threshold-based detection for demo
-            motion_threshold = self.config.get("detection.motion_threshold", 12.0)
-            gyro_threshold = self.config.get("detection.gyro_threshold", 1.0)
+            # Track recent motion for adaptive thresholds
+            total_magnitude = accel_magnitude + gyro_magnitude
+            self.recent_magnitudes.append(total_magnitude)
+            self.peak_buffer.append(accel_magnitude)
+            self.motion_variance_buffer.append(accel_magnitude)
+            
+            # Calculate motion variance to detect walking vs stationary
+            motion_variance = 0.0
+            if len(self.motion_variance_buffer) >= 10:
+                values = list(self.motion_variance_buffer)
+                mean_val = sum(values) / len(values)
+                motion_variance = sum((x - mean_val) ** 2 for x in values) / len(values)
+            
+            # Update stillness detection
+            stillness_threshold = self.config.get("detection.stillness_threshold", 1.5)
+            if motion_variance < stillness_threshold:
+                self.stationary_count += 1
+                if self.stationary_count >= 10:  # 10 consecutive low-variance readings
+                    self.is_stationary = True
+            else:
+                self.stationary_count = 0
+                self.is_stationary = False
+
+            # Update baseline motion (rolling average)
+            if len(self.recent_magnitudes) > 5:
+                self.baseline_motion = sum(list(self.recent_magnitudes)[-10:]) / min(
+                    10, len(self.recent_magnitudes)
+                )
+
+            # Get thresholds (potentially adaptive)
+            motion_threshold = self.config.get("detection.motion_threshold", 8.0)
+            gyro_threshold = self.config.get("detection.gyro_threshold", 0.5)
+
+            # Apply adaptive thresholds if enabled
+            if self.config.get("detection.enable_adaptive_thresholds", True):
+                sensitivity = self.config.get("detection.motion_sensitivity", 0.7)
+                # Adjust thresholds based on recent activity - but ensure they're above gravity
+                motion_threshold = max(
+                    motion_threshold * sensitivity, 10.5
+                )  # Minimum threshold above gravity (9.8)
+                gyro_threshold = max(
+                    gyro_threshold * sensitivity, 0.3
+                )  # Minimum threshold of 0.3
 
             # Detect step if we have significant motion and haven't detected one recently
             time_since_last_step = time.time() - getattr(self, "_last_step_time", 0)
-            min_step_interval = self.config.get("detection.min_step_interval", 0.8)
+            min_step_interval = self.config.get("detection.min_step_interval", 0.4)
 
             # Check individual conditions
             accel_exceeds = accel_magnitude > motion_threshold
             gyro_exceeds = gyro_magnitude > gyro_threshold
             time_ok = time_since_last_step > min_step_interval
+            
+            # Motion variance filter - but make it less restrictive
+            motion_variance_ok = True
+            if self.config.get("detection.enable_motion_variance_filter", True):
+                min_variance = self.config.get("detection.min_motion_variance", 1.0)
+                # Allow steps if variance is good OR if we have strong motion signals
+                strong_motion = accel_magnitude > motion_threshold * 1.3 or gyro_magnitude > gyro_threshold * 1.5
+                motion_variance_ok = (motion_variance >= min_variance) or strong_motion
+            
+            # Stillness detection - be more strict about detecting stationary state
+            not_stationary = True
+            if self.config.get("detection.enable_stillness_detection", True):
+                # Consider stationary if we have very low variance OR if readings are close to gravity
+                gravity_threshold = 0.5  # Tolerance for gravity readings
+                is_gravity_reading = abs(accel_magnitude - 9.8) < gravity_threshold and gyro_magnitude < 0.2
+                clearly_stationary = (self.is_stationary or is_gravity_reading) and motion_variance < 0.5
+                not_stationary = not clearly_stationary
 
-            # Step detection: either acceleration OR gyroscope exceeds threshold, AND enough time has passed
-            if (accel_exceeds or gyro_exceeds) and time_ok:
+            # Method 1: Basic threshold detection (require BOTH accel AND gyro for reliability)
+            basic_detection = (accel_exceeds and gyro_exceeds) and time_ok and not_stationary and motion_variance_ok
+            
+            # Method 1b: Strong signal detection (require both accel AND gyro for strong signals)
+            strong_signal_detection = False
+            if self.config.get("detection.enable_hybrid_detection", True):
+                very_strong_accel = accel_magnitude > motion_threshold * 1.3
+                significant_gyro = gyro_magnitude > gyro_threshold * 0.5  # Require some gyro movement
+                strong_signal_detection = very_strong_accel and significant_gyro and time_ok and not_stationary
+
+            # Method 2: Peak detection (if enabled)
+            peak_detection = False
+            if (
+                self.config.get("detection.enable_peak_detection", True)
+                and len(self.peak_buffer) >= 3
+            ):
+                # Simple peak detection: current value is higher than neighbors
+                current_val = self.peak_buffer[-1]
+                prev_val = self.peak_buffer[-2] if len(self.peak_buffer) > 1 else 0
+                prev_prev_val = self.peak_buffer[-3] if len(self.peak_buffer) > 2 else 0
+
+                is_peak = (
+                    current_val > prev_val
+                    and prev_val > prev_prev_val
+                    and current_val > motion_threshold * 0.6
+                )  # Lower threshold for peaks
+                peak_detection = is_peak and time_ok and not_stationary
+
+            # Method 3: Motion change detection (require gyro activity)
+            motion_change_detection = False
+            if len(self.recent_magnitudes) >= 3:
+                recent_avg = sum(list(self.recent_magnitudes)[-3:]) / 3
+                older_avg = (
+                    sum(list(self.recent_magnitudes)[-6:-3]) / 3
+                    if len(self.recent_magnitudes) >= 6
+                    else recent_avg
+                )
+                motion_spike = recent_avg > older_avg * 1.3 and recent_avg > 5.0  # Lowered thresholds
+                motion_change_detection = motion_spike and time_ok and not_stationary
+            
+            # Method 4: Variance-based detection (require gyro for walking confirmation)
+            variance_detection = False
+            if motion_variance_ok and (accel_exceeds and gyro_exceeds) and time_ok and not_stationary:
+                variance_detection = True
+            
+            # Method 5: Fallback gyro-only detection (for subtle walking with high gyro activity)
+            gyro_only_detection = False
+            if gyro_magnitude > gyro_threshold * 2.0 and time_ok and not_stationary and motion_variance_ok:
+                gyro_only_detection = True
+
+            # Combine detection methods (use OR logic - any method can trigger)
+            step_detected_by_motion = (basic_detection or strong_signal_detection or 
+                                     peak_detection or motion_change_detection or 
+                                     variance_detection or gyro_only_detection)
+
+            # Step detection: use combined methods
+            if step_detected_by_motion:
                 self.total_steps += 1
                 self.last_step_time = time.time()
                 self._last_step_time = time.time()
@@ -211,30 +339,48 @@ class RealTimeStepCounter:
                     ]
 
                     # Determine trigger reason
-                    trigger_reason = []
-                    if accel_exceeds:
-                        trigger_reason.append(
-                            f"Accel({accel_magnitude:.1f}>{motion_threshold})"
+                    trigger_methods = []
+                    if basic_detection:
+                        if accel_exceeds:
+                            trigger_methods.append(
+                                f"Threshold-Accel({accel_magnitude:.1f}>{motion_threshold:.1f})"
+                            )
+                        if gyro_exceeds:
+                            trigger_methods.append(
+                                f"Threshold-Gyro({gyro_magnitude:.1f}>{gyro_threshold:.1f})"
+                            )
+                    if strong_signal_detection:
+                        trigger_methods.append(f"Strong-Signal({max(accel_magnitude, gyro_magnitude):.1f})")
+                    if peak_detection:
+                        trigger_methods.append(f"Peak-Detection({accel_magnitude:.1f})")
+                    if motion_change_detection:
+                        trigger_methods.append(
+                            f"Motion-Spike({sum(list(self.recent_magnitudes)[-3:])/3:.1f})"
                         )
-                    if gyro_exceeds:
-                        trigger_reason.append(
-                            f"Gyro({gyro_magnitude:.1f}>{gyro_threshold})"
-                        )
-                    trigger_str = " + ".join(trigger_reason)
+                    if variance_detection:
+                        trigger_methods.append(f"Variance-Pattern({motion_variance:.2f})")
+                    if gyro_only_detection:
+                        trigger_methods.append(f"Gyro-Only({gyro_magnitude:.1f})")
+
+                    trigger_str = (
+                        " + ".join(trigger_methods) if trigger_methods else "Unknown"
+                    )
 
                     print(f"🦶 STEP #{self.total_steps} DETECTED!")
                     print(f"   🔥 Trigger: {trigger_str}")
                     print(
-                        f"   📊 Motion: Accel={accel_magnitude:.1f} ({'✅' if accel_exceeds else '❌'}>{motion_threshold}), Gyro={gyro_magnitude:.1f} ({'✅' if gyro_exceeds else '❌'}>{gyro_threshold})"
+                        f"   📊 Motion: Accel={accel_magnitude:.1f} ({'✅' if accel_exceeds else '❌'}>{motion_threshold:.1f}), Gyro={gyro_magnitude:.1f} ({'✅' if gyro_exceeds else '❌'}>{gyro_threshold:.1f})"
                     )
+                    print(f"   📈 Variance: {motion_variance:.2f} ({'✅' if motion_variance_ok else '❌'} walking pattern)")
+                    print(f"   🎯 Status: {'🚶‍♂️ Moving' if not self.is_stationary else '🧍‍♂️ Stationary'}")
                     print(
                         f"   🧠 Model: {predicted_class} ({max_confidence:.1%} confidence)"
                     )
                     print(
-                        f"   📈 Probs: no_step={no_step_prob:.1%}, start={start_prob:.1%}, end={end_prob:.1%}"
+                        f"   � Probs: no_step={no_step_prob:.1%}, start={start_prob:.1%}, end={end_prob:.1%}"
                     )
                     print(
-                        f"   ⚙️  Thresholds: start={self.start_threshold}, end={self.end_threshold}, motion={motion_threshold}, gyro={gyro_threshold}"
+                        f"   ⚙️  Thresholds: start={self.start_threshold}, end={self.end_threshold}, motion={motion_threshold:.1f}, gyro={gyro_threshold:.1f}"
                     )
                     print(
                         f"   ⏱️  Time since last: {time_since_last_step:.1f}s (min: {min_step_interval}s)"
@@ -255,11 +401,20 @@ class RealTimeStepCounter:
                         reasons.append(
                             f"Too soon: {time_since_last_step:.1f}s < {min_step_interval}s"
                         )
+                    elif not motion_variance_ok:
+                        reasons.append(
+                            f"Low variance: {motion_variance:.2f} < {self.config.get('detection.min_motion_variance', 2.0)} (not walking pattern)"
+                        )
+                    elif self.is_stationary:
+                        reasons.append(
+                            f"Stationary: variance={motion_variance:.2f}, count={self.stationary_count}"
+                        )
 
                     print(f"⏸️  NO STEP: {', '.join(reasons)}")
                     print(
-                        f"   📊 Accel={accel_magnitude:.1f}, Gyro={gyro_magnitude:.1f}"
+                        f"   📊 Accel={accel_magnitude:.1f}, Gyro={gyro_magnitude:.1f}, Variance={motion_variance:.2f}"
                     )
+                    print(f"   🎯 Status: {'🧍‍♂️ Stationary' if self.is_stationary else '🚶‍♂️ Moving'}")
                     print("   " + "-" * 30)
 
         # Alternative: Use probability-based detection if model gives good predictions
