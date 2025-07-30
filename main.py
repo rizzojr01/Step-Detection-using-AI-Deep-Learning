@@ -211,7 +211,7 @@ class DetectionConfig(BaseModel):
     window_size: Optional[int] = None
     start_threshold: Optional[float] = None
     end_threshold: Optional[float] = None
-    min_step_interval: Optional[int] = None
+    min_step_interval: Optional[float] = None
     motion_threshold: Optional[float] = None
     gyro_threshold: Optional[float] = None
     min_motion_variance: Optional[float] = None
@@ -248,13 +248,24 @@ def get_config_api():
         v = all_items.get(k)
         if v is not None:
             # Try to cast to correct type
-            if k in ["window_size", "min_step_interval"]:
-                config_dict[k] = int(v)
+            if k == "window_size":
+                try:
+                    config_dict[k] = int(float(v))
+                except ValueError:
+                    try:
+                        config_dict[k] = float(v)
+                    except ValueError:
+                        config_dict[k] = None
+            elif k == "min_step_interval":
+                try:
+                    config_dict[k] = float(v)
+                except ValueError:
+                    config_dict[k] = None
             else:
                 try:
                     config_dict[k] = float(v)
-                except:
-                    config_dict[k] = v
+                except ValueError:
+                    config_dict[k] = None
         else:
             config_dict[k] = None
     return DetectionConfig(**config_dict)
@@ -272,15 +283,23 @@ def get_config_key_api(key: str):
 
     config_dict = cast(Dict[str, Any], {k: None for k in ALLOWED_CONFIG_KEYS})
     # Assign correct type for each key
-    if key in ["window_size", "min_step_interval"]:
+    if key == "window_size":
         try:
-            config_dict[key] = int(val)
-        except:
+            config_dict[key] = int(float(val))
+        except ValueError:
+            try:
+                config_dict[key] = float(val)
+            except ValueError:
+                config_dict[key] = None
+    elif key == "min_step_interval":
+        try:
+            config_dict[key] = float(val)
+        except ValueError:
             config_dict[key] = None
     else:
         try:
             config_dict[key] = float(val)
-        except:
+        except ValueError:
             config_dict[key] = None
     return DetectionConfig(**config_dict)
 
