@@ -1,8 +1,10 @@
+import time
+from contextlib import asynccontextmanager
 from typing import List, Optional
 
 import numpy as np
 import torch
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, WebSocket
 from pydantic import BaseModel, Field
 
 from src.initialize_model import load_production_model
@@ -14,14 +16,6 @@ from src.step_detection.utils.config_db import (
 )
 
 # FastAPI app instance
-config = get_all_config()
-app = FastAPI(
-    title=get_config_value("api.title", "Step Detection API"),
-    description="Real-time step detection using deep learning models",
-    version=get_config_value("api.version", "2.0.0"),
-    docs_url="/docs",
-    redoc_url="/redoc",
-)
 
 # Global step counter instance
 # Global step counter instance
@@ -29,69 +23,8 @@ app = FastAPI(
 step_counter = None
 
 
-# --- Config API endpoints ---
-class ConfigItem(BaseModel):
-    key: str
-    value: str
-
-
-# Only allow these keys to be managed via API
-ALLOWED_CONFIG_KEYS = [
-    "window_size",
-    "start_threshold",
-    "end_threshold",
-    "min_step_interval",
-    "motion_threshold",
-    "gyro_threshold",
-    "min_motion_variance",
-    "stillness_threshold",
-    # Add more detection keys as needed
-]
-
-
-@app.get("/config", response_model=List[ConfigItem])
-def get_config_api():
-    """Get all important detection config values"""
-    all_items = get_all_config()
-    items = [
-        ConfigItem(key=k, value=v)
-        for k, v in all_items.items()
-        if k in ALLOWED_CONFIG_KEYS
-    ]
-    return items
-
-
-@app.get("/config/{key}", response_model=ConfigItem)
-def get_config_key_api(key: str):
-    if key not in ALLOWED_CONFIG_KEYS:
-        raise HTTPException(status_code=403, detail="Config key not allowed")
-    val = get_config_value(key)
-    if val is None:
-        raise HTTPException(status_code=404, detail="Config key not found")
-    return ConfigItem(key=key, value=val)
-
-
-@app.post("/config/{key}", response_model=ConfigItem)
-def set_config_key_api(key: str, value: str):
-    if key not in ALLOWED_CONFIG_KEYS:
-        raise HTTPException(status_code=403, detail="Config key not allowed")
-    set_config_value(key, value)
-    return ConfigItem(key=key, value=value)
-
-
-import time
-from contextlib import asynccontextmanager
-from typing import Any, Dict, List, Optional
-
-import numpy as np
-import torch
-from fastapi import FastAPI, HTTPException, WebSocket
-from pydantic import BaseModel, Field
-
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-
     print("🚀 Starting Step Detection API...")
     initialize_model()
     yield
@@ -99,9 +32,9 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title=config.get("api.title", "Step Detection API"),
+    title=get_config_value("api.title", "Step Detection API"),
     description="Real-time step detection using deep learning models",
-    version=config.get("api.version", "2.0.0"),
+    version=get_config_value("api.version", "2.0.0"),
     docs_url="/docs",
     redoc_url="/redoc",
     lifespan=lifespan,
@@ -267,6 +200,98 @@ async def websocket_endpoint(websocket: WebSocket):
                 await websocket.close()
             except:
                 pass  # WebSocket already closed, ignore
+
+
+# --- Config API endpoints ---
+
+from typing import Optional
+
+
+class DetectionConfig(BaseModel):
+    window_size: Optional[int] = None
+    start_threshold: Optional[float] = None
+    end_threshold: Optional[float] = None
+    min_step_interval: Optional[int] = None
+    motion_threshold: Optional[float] = None
+    gyro_threshold: Optional[float] = None
+    min_motion_variance: Optional[float] = None
+    stillness_threshold: Optional[float] = None
+    ai_high_confidence_threshold: Optional[float] = None
+    ai_sensor_disagree_threshold: Optional[float] = None
+
+
+class ConfigUpdateRequest(BaseModel):
+    value: str
+
+
+# Only allow these keys to be managed via API
+ALLOWED_CONFIG_KEYS = [
+    "window_size",
+    "start_threshold",
+    "end_threshold",
+    "min_step_interval",
+    "motion_threshold",
+    "gyro_threshold",
+    "min_motion_variance",
+    "stillness_threshold",
+    "ai_high_confidence_threshold",
+    "ai_sensor_disagree_threshold",
+]
+
+
+@app.get("/config", response_model=DetectionConfig)
+def get_config_api():
+    """Get all important detection config values as a single object"""
+    all_items = get_all_config()
+    config_dict = {}
+    for k in ALLOWED_CONFIG_KEYS:
+        v = all_items.get(k)
+        if v is not None:
+            # Try to cast to correct type
+            if k in ["window_size", "min_step_interval"]:
+                config_dict[k] = int(v)
+            else:
+                try:
+                    config_dict[k] = float(v)
+                except:
+                    config_dict[k] = v
+        else:
+            config_dict[k] = None
+    return DetectionConfig(**config_dict)
+
+
+@app.get("/config/{key}", response_model=DetectionConfig)
+def get_config_key_api(key: str):
+    if key not in ALLOWED_CONFIG_KEYS:
+        raise HTTPException(status_code=403, detail="Config key not allowed")
+    val = get_config_value(key)
+    if val is None:
+        raise HTTPException(status_code=404, detail="Config key not found")
+    # Return config with only this key set
+    from typing import Any, Dict, cast
+
+    config_dict = cast(Dict[str, Any], {k: None for k in ALLOWED_CONFIG_KEYS})
+    # Assign correct type for each key
+    if key in ["window_size", "min_step_interval"]:
+        try:
+            config_dict[key] = int(val)
+        except:
+            config_dict[key] = None
+    else:
+        try:
+            config_dict[key] = float(val)
+        except:
+            config_dict[key] = None
+    return DetectionConfig(**config_dict)
+
+
+@app.post("/config/{key}", response_model=DetectionConfig)
+def set_config_key_api(key: str, req: ConfigUpdateRequest):
+    if key not in ALLOWED_CONFIG_KEYS:
+        raise HTTPException(status_code=403, detail="Config key not allowed")
+    set_config_value(key, req.value)
+    # Return updated config
+    return get_config_api()
 
 
 if __name__ == "__main__":
