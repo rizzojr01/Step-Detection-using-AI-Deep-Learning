@@ -15,14 +15,14 @@ import torch
 # Add current directory to path to import local modules
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-from realtime_step_detector import RealTimeStepCounter
+from src.step_detection.core.detector import RealTimeStepCounter
 
 
 # Import FastAPI components only when needed to avoid dependency issues
 def get_app_and_step_counter():
     """Lazy import of FastAPI components to avoid circular dependencies"""
     try:
-        from step_detection_api import app, step_counter
+        from main import app, step_counter
 
         return app, step_counter
     except ImportError:
@@ -97,13 +97,7 @@ def initialize_model_from_notebook():
         # Initialize the step counter
         step_counter = RealTimeStepCounter(model=model, device=str(device))
 
-        # Configure thresholds for better detection
-        step_counter.start_threshold = 0.3
-        step_counter.end_threshold = 0.3
-
         print("✅ Step counter initialized")
-        print(f"   Start threshold: {step_counter.start_threshold}")
-        print(f"   End threshold: {step_counter.end_threshold}")
 
         return True
 

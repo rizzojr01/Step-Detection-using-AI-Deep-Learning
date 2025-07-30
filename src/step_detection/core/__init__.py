@@ -1,5 +1,5 @@
 """Core step detection functionality."""
 
-from .detector import SimpleStepCounter, StepDetector
+from .detector import RealTimeStepCounter
 
-__all__ = ["StepDetector", "SimpleStepCounter"]
+__all__ = ["RealTimeStepCounter"]

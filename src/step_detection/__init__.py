@@ -8,7 +8,7 @@ __author__ = "Step Detection Team"
 __email__ = "contact@stepdetection.com"
 
 # Core functionality
-from .core.detector import SimpleStepCounter, StepDetector
+from .core.detector import RealTimeStepCounter
 
 # Model utilities
 from .models.model_utils import (
@@ -22,8 +22,7 @@ from .models.model_utils import (
 from .utils.data_processor import load_step_data, prepare_data_for_training
 
 __all__ = [
-    "StepDetector",
-    "SimpleStepCounter",
+    "RealTimeStepCounter",
     "load_step_data",
     "prepare_data_for_training",
     "create_cnn_model",

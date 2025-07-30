@@ -128,12 +128,24 @@ class Config:
         return self.get("detection.magnitude_threshold", 15.0)
 
     def get_start_threshold(self) -> float:
-        """Get legacy start threshold."""
-        return self.get("detection.start_threshold", 0.07)
+        """Get start threshold for step detection."""
+        return self.get("detection.start_threshold", 0.3)
 
     def get_end_threshold(self) -> float:
-        """Get legacy end threshold."""
-        return self.get("detection.end_threshold", 0.07)
+        """Get end threshold for step detection."""
+        return self.get("detection.end_threshold", 0.3)
+
+    def get_motion_threshold(self) -> float:
+        """Get motion threshold for step detection."""
+        return self.get("detection.motion_threshold", 12.0)
+
+    def get_gyro_threshold(self) -> float:
+        """Get gyro threshold for step detection."""
+        return self.get("detection.gyro_threshold", 1.0)
+
+    def get_window_size(self) -> int:
+        """Get sensor buffer window size."""
+        return self.get("detection.window_size", 10)
 
     # Detection filter settings
 
@@ -152,6 +164,52 @@ class Config:
     def is_confidence_filter_enabled(self) -> bool:
         """Check if confidence filter is enabled (alias for use_confidence_filter)."""
         return self.use_confidence_filter()
+
+    def is_time_filter_enabled(self) -> bool:
+        """Check if time filter is enabled."""
+        return self.get("detection.enable_time_filter", True)
+
+    def get_min_step_interval(self) -> float:
+        """Get minimum time interval between step detections in seconds."""
+        return self.get("detection.min_step_interval", 0.3)
+
+    def get_step_timeout(self) -> float:
+        """Get maximum time a step can remain in progress in seconds."""
+        return self.get("detection.step_timeout", 2.0)
+
+    def get_max_step_rate(self) -> float:
+        """Get maximum steps per second allowed."""
+        return self.get("detection.max_step_rate", 4.0)
+
+    def get_step_rate_window(self) -> float:
+        """Get time window for rate calculation in seconds."""
+        return self.get("detection.step_rate_window", 1.0)
+
+    def get_min_step_duration(self) -> float:
+        """Get minimum step duration in seconds."""
+        return self.get("detection.min_step_duration", 0.1)
+
+    def get_max_step_duration(self) -> float:
+        """Get maximum step duration in seconds."""
+        return self.get("detection.max_step_duration", 2.0)
+
+    # Debug configuration methods
+
+    def is_step_detection_logs_enabled(self) -> bool:
+        """Check if detailed step detection logging is enabled."""
+        return self.get("debug.enable_step_detection_logs", True)
+
+    def is_raw_model_tracking_enabled(self) -> bool:
+        """Check if raw model tracking is enabled."""
+        return self.get("debug.enable_raw_model_tracking", True)
+
+    def should_log_only_on_activity(self) -> bool:
+        """Check if logging should only happen on step activity."""
+        return self.get("debug.log_only_on_activity", True)
+
+    def should_show_confidence_threshold(self) -> bool:
+        """Check if confidence threshold should be shown in logs."""
+        return self.get("debug.show_confidence_threshold", True)
 
     # Training-specific convenience methods
 

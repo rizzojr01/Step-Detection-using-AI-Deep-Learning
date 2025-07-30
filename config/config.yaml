@@ -1,58 +1,44 @@
 # Step Detection Configuration
 
-# Model Configuration
-model:
-  input_shape: [6] # 6 sensor features (3 accel + 3 gyro)
-  output_classes: 3 # No Label, Start, End
-  architecture: "CNN" # Original high-accuracy CNN architecture
-  framework: "TensorFlow"
-
-# Training Configuration
-training:
-  epochs: 50 # Increased for better convergence
-  batch_size: 32 # Reduced for better gradient updates
-  learning_rate: 0.001
-  validation_split: 0.2
-  early_stopping_patience: 10
-  reduce_lr_patience: 5
-
-  # Model architecture parameters
-  dropout_rate: 0.3 # Increased to reduce overfitting to small movements
-  regularization: 0.001 # L2 regularization factor
-
-  # Class balancing
-  use_class_weights: true # Automatically calculate class weights
-
-  # Data augmentation (if needed)
-  data_augmentation: false
-  noise_factor: 0.01
-
-# Detection Configuration
+# Step Detection Configuration
 detection:
-  window_size: 50
-  # Enhanced sensitivity controls
-  confidence_threshold: 0.001 # Lowered to match model output range
-  magnitude_threshold: 8.0 # Reduced from 15.0 to capture normal walking patterns
+  # Sensor buffer and thresholds
+  window_size: 10 # Number of recent sensor readings to consider
+  start_threshold: 0.3 # Threshold for step start detection (increased from 0.3)
+  end_threshold: 0.3 # Threshold for step end detection (increased from 0.3)
 
-  # Model prediction thresholds
-  prediction_confidence_min: 0.5 # Minimum confidence to consider any prediction
-  step_class_threshold: 0.6 # Specific threshold for step classes (1=start, 2=end)
+  # AI Model confidence requirements
+  ai_high_confidence_threshold: 0.75 # High confidence threshold for AI-only detection
+  ai_sensor_disagree_threshold: 0.80 # Required AI confidence when sensors disagree
 
-  # Filtering parameters
-  enable_magnitude_filter: true # Enable/disable magnitude-based filtering
-  enable_confidence_filter: true # Enable/disable confidence-based filtering
-  temporal_smoothing: false # Enable temporal smoothing (future feature)
+  # Motion detection thresholds (balanced for accuracy)
+  motion_threshold: 11.0 # Acceleration magnitude threshold for step detection (above gravity + margin)
+  gyro_threshold: 1.5 # Gyroscope magnitude threshold for step detection (increased to reduce false positives)
 
-  # Advanced filtering options
-  adaptive_magnitude: true # Adjust magnitude threshold based on recent activity
-  min_magnitude_threshold: 6.0 # Absolute minimum to filter out phone shakes
-  max_magnitude_threshold: 25.0 # Maximum to filter out extreme movements
+  # Timing constraints
+  min_step_interval: 0.4 # Minimum time (seconds) between step detections
 
-# Data Configuration
-data:
-  raw_data_path: "data/raw"
-  processed_data_path: "data/processed"
-  model_save_path: "models"
+  # Advanced filtering to reduce false positives (made less restrictive)
+  enable_motion_variance_filter: true # Only detect steps with varying motion patterns
+  min_motion_variance: 1.0 # Minimum variance in motion to consider it walking (lowered from 2.0)
+  enable_stillness_detection: true # Detect when user is stationary
+  stillness_threshold: 0.8 # Max motion variance when considered "still" (lowered from 1.5)
+
+  # Advanced detection settings (less restrictive)
+  enable_peak_detection: true # Enable peak-based detection for better accuracy
+  enable_adaptive_thresholds: false # Disable adaptive thresholds to prevent over-adjustment
+  motion_sensitivity: 0.9 # Sensitivity multiplier (closer to 1.0 = less adjustment)
+
+  # Hybrid detection mode
+  enable_hybrid_detection: true # Use multiple detection methods
+  require_all_conditions: false # Don't require ALL conditions (OR logic instead of AND)
+
+  # Peak detection parameters
+  peak_prominence: 2.0 # Minimum prominence for peak detection
+  peak_distance: 5 # Minimum distance between peaks (in samples)
+
+  # Buffer settings
+  processing_buffer_size: 100 # Size of processing times buffer
 
 # API Configuration
 api:
@@ -60,10 +46,20 @@ api:
   port: 8000
   reload: true
   title: "Step Detection API"
-  version: "1.0.0"
+  version: "2.0.0"
 
-# Logging Configuration
-logging:
-  level: "INFO"
-  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-  log_file: "logs/step_detection.log"
+# Model Configuration (currently used values only)
+model:
+  input_shape: [6] # 6 sensor features (3 accel + 3 gyro)
+  output_classes: 3 # No Label, Start, End
+
+# Data Configuration
+data:
+  raw_data_path: "data/raw"
+  processed_data_path: "data/processed"
+  model_save_path: "models"
+
+# Debug Configuration
+debug:
+  enable_step_detection_logs: true
+  log_only_on_steps: false

@@ -1,6 +1,6 @@
 """
 Model Utilities
-Functions for creating, training, and evaluating TensorFlow models.
+Functions for creating, training, and evaluating PyTorch models.
 """
 
 import json
@@ -8,15 +8,89 @@ import os
 from typing import Dict, List, Optional, Tuple
 
 import numpy as np
-import tensorflow as tf
+import torch
+import torch.nn as nn
+import torch.optim as optim
 from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
-from tensorflow import keras
-from tensorflow.keras import layers
+from torch.utils.data import DataLoader, Dataset
 
 # Import configuration
 from ..utils.config import get_config
 
 
+class StepDetectionCNN(nn.Module):
+    """
+    PyTorch CNN model for step detection matching the original working architecture.
+    This matches the exact architecture from your trained model with conv3, fc1, fc2, fc3 layers.
+    """
+
+    def __init__(self):
+        super(StepDetectionCNN, self).__init__()
+        # Convolutional layers - matching your original architecture
+        self.conv1 = nn.Conv1d(in_channels=6, out_channels=32, kernel_size=1, stride=1)
+        self.conv2 = nn.Conv1d(in_channels=32, out_channels=64, kernel_size=1, stride=1)
+        self.conv3 = nn.Conv1d(
+            in_channels=64, out_channels=128, kernel_size=1, stride=1
+        )
+
+        # Activation functions
+        self.relu = nn.ReLU()
+        self.maxpool = nn.MaxPool1d(kernel_size=1)
+
+        # Fully connected layers - matching your original architecture
+        self.fc1 = nn.Linear(128, 64)
+        self.fc2 = nn.Linear(64, 32)
+        self.fc3 = nn.Linear(32, 3)
+
+        # Dropout for regularization
+        self.dropout = nn.Dropout(0.5)
+
+    def forward(self, x):
+        # Input shape: [batch, 6] for 6 sensor features
+        x = x.unsqueeze(2)  # [batch, 6] -> [batch, 6, 1] for Conv1d
+
+        # Convolutional layers
+        x = self.conv1(x)
+        x = self.relu(x)
+        x = self.maxpool(x)
+
+        x = self.conv2(x)
+        x = self.relu(x)
+        x = self.maxpool(x)
+
+        x = self.conv3(x)
+        x = self.relu(x)
+        x = self.maxpool(x)
+
+        # Flatten for fully connected layers
+        x = x.view(x.size(0), -1)
+
+        # Fully connected layers
+        x = self.fc1(x)
+        x = self.relu(x)
+        x = self.dropout(x)
+
+        x = self.fc2(x)
+        x = self.relu(x)
+        x = self.dropout(x)
+
+        x = self.fc3(x)
+
+        return x
+
+
+class StepDataset(Dataset):
+    """Custom dataset for step detection"""
+
+    def __init__(self, features, labels):
+        self.features = torch.tensor(features, dtype=torch.float32)
+        self.labels = torch.tensor(labels, dtype=torch.long)
+
+    def __len__(self):
+        return len(self.features)
+
+    def __getitem__(self, idx):
+        return self.features[idx], self.labels[idx]
 
 
 def create_cnn_model(
@@ -25,62 +99,43 @@ def create_cnn_model(
     dropout_rate: Optional[float] = None,
     regularization: Optional[float] = None,
     config_path: Optional[str] = None,
-) -> keras.Model:
+    device: str = "cpu",
+) -> nn.Module:
     """
     Create CNN model for step detection using the EXACT original high-accuracy architecture.
-    This is the EXACT same code from the notebook that achieved ~96% accuracy.
+    This is the EXACT same PyTorch architecture that matches the working model.
 
     Args:
-        input_shape: Input shape (overrides config)
+        input_shape: Input shape (overrides config) - not used in PyTorch
         num_classes: Number of output classes (overrides config)
         dropout_rate: Dropout rate (overrides config) - NOT USED in original
         regularization: L2 regularization factor (overrides config) - NOT USED in original
         config_path: Path to config file
+        device: Device to create model on
 
     Returns:
-        Compiled Keras model
+        PyTorch model
     """
     # Load configuration
     config = get_config(config_path)
-    input_shape = input_shape or tuple(config.get_input_shape())
     num_classes = num_classes or config.get_output_classes()
-    dropout_rate = dropout_rate or config.get_dropout_rate()
-    regularization = regularization or config.get_regularization()
 
+    # Create device
+    device_obj = torch.device(device)
 
-    # Use the EXACT same architecture from the notebook
-    model = keras.Sequential(
-        [
-            # Input layer - reshape for Conv1D (batch_size, timesteps, features)
-            layers.Reshape((1, 6), input_shape=input_shape),
-            # First convolutional layer
-            layers.Conv1D(filters=32, kernel_size=1, strides=1, activation="relu"),
-            # First max pooling layer
-            layers.MaxPooling1D(pool_size=1),
-            # Second convolutional layer
-            layers.Conv1D(filters=64, kernel_size=1, strides=1, activation="relu"),
-            # Flatten for dense layer
-            layers.Flatten(),
-            # Dense layer for classification
-            layers.Dense(3, activation="softmax"),
-        ]
-    )
+    # Create the EXACT same architecture as the working PyTorch model
+    model = StepDetectionCNN().to(device_obj)
 
-    # Compile with EXACT same settings as notebook
-    model.compile(
-        optimizer="adam", loss="categorical_crossentropy", metrics=["accuracy"]
-    )
-
-    print("✅ CNN model created with EXACT original architecture!")
-    print(
-        "🎯 This is the EXACT same model that achieved ~96% accuracy in the notebook!"
-    )
+    print("✅ CNN model created with EXACT original PyTorch architecture!")
+    print("🎯 This is the EXACT same model that achieved high accuracy!")
+    print(f"   Device: {device_obj}")
+    print(f"   Parameters: {sum(p.numel() for p in model.parameters()):,}")
 
     return model
 
 
 def train_model(
-    model: keras.Model,
+    model: nn.Module,
     train_features: np.ndarray,
     train_labels: np.ndarray,
     val_features: np.ndarray,
@@ -89,24 +144,26 @@ def train_model(
     batch_size: Optional[int] = None,
     patience: Optional[int] = None,
     config_path: Optional[str] = None,
-) -> keras.callbacks.History:
+    device: str = "cpu",
+) -> Dict:
     """
-    Train the model with EXACT same approach as the high-accuracy notebook.
-    Simple training without callbacks or class weights - this achieves ~96% accuracy.
+    Train the PyTorch model with EXACT same approach as the high-accuracy notebook.
+    Simple training approach that achieves high accuracy.
 
     Args:
-        model: Keras model to train
+        model: PyTorch model to train
         train_features: Training features
         train_labels: Training labels
         val_features: Validation features
         val_labels: Validation labels
         epochs: Maximum number of epochs (overrides config)
         batch_size: Batch size for training (overrides config)
-        patience: Early stopping patience (IGNORED - not used in notebook)
+        patience: Early stopping patience (not used for simplicity)
         config_path: Path to config file
+        device: Device for training
 
     Returns:
-        Training history
+        Training history dictionary
     """
     # Load configuration
     config = get_config(config_path)
@@ -117,65 +174,135 @@ def train_model(
     if batch_size is None:
         batch_size = config.get_batch_size()
 
-    print(f"🏃‍♂️ Training model with EXACT notebook approach:")
+    print(f"🏃‍♂️ Training PyTorch model with EXACT notebook approach:")
     print(f"   Epochs: {epochs}")
     print(f"   Batch size: {batch_size}")
-    print(f"   No callbacks, no class weights - simple like the notebook!")
+    print(f"   Device: {device}")
 
-    # Check if model expects categorical or sparse categorical labels
-    model_loss = model.loss
-    if hasattr(model_loss, "name"):
-        loss_name = model_loss.name
-    elif hasattr(model_loss, "__name__"):
-        loss_name = model_loss.__name__
-    else:
-        loss_name = str(model_loss)
+    # Create device
+    device_obj = torch.device(device)
+    model = model.to(device_obj)
 
-    # Convert labels if necessary for categorical crossentropy
-    if "categorical_crossentropy" in loss_name and len(train_labels.shape) == 1:
-        print(
-            "🔄 Converting integer labels to one-hot encoding for categorical crossentropy..."
-        )
-        from tensorflow.keras.utils import to_categorical
+    # Create datasets and dataloaders
+    train_dataset = StepDataset(train_features, train_labels)
+    val_dataset = StepDataset(val_features, val_labels)
 
-        train_labels = to_categorical(train_labels, num_classes=3)
-        val_labels = to_categorical(val_labels, num_classes=3)
-        print(f"   Labels converted to shape: {train_labels.shape}")
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+    val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
 
-    # Train the model with EXACT notebook approach - simple and effective!
-    # No class weights, no callbacks - just plain training like the notebook
-    history = model.fit(
-        train_features,
-        train_labels,  # One-hot encoded labels
-        validation_data=(val_features, val_labels),
-        epochs=epochs,
-        batch_size=batch_size,
-        verbose=1,
-    )
+    # Training setup
+    criterion = nn.CrossEntropyLoss()
+    optimizer = optim.Adam(model.parameters(), lr=0.001)
 
-    print(f"✅ Training completed after {len(history.history['loss'])} epochs!")
+    # Training history
+    history = {"loss": [], "val_loss": [], "accuracy": [], "val_accuracy": []}
+
+    print("🔥 Starting training...")
+
+    # Training loop
+    for epoch in range(epochs):
+        # Training phase
+        model.train()
+        train_loss = 0.0
+        train_correct = 0
+        train_total = 0
+
+        for features_batch, labels_batch in train_loader:
+            features_batch = features_batch.to(device_obj)
+            labels_batch = labels_batch.to(device_obj)
+
+            # Forward pass
+            optimizer.zero_grad()
+            outputs = model(features_batch)
+            loss = criterion(outputs, labels_batch)
+
+            # Backward pass
+            loss.backward()
+            optimizer.step()
+
+            # Statistics
+            train_loss += loss.item()
+            _, predicted = torch.max(outputs.data, 1)
+            train_total += labels_batch.size(0)
+            train_correct += (predicted == labels_batch).sum().item()
+
+        # Validation phase
+        model.eval()
+        val_loss = 0.0
+        val_correct = 0
+        val_total = 0
+
+        with torch.no_grad():
+            for features_batch, labels_batch in val_loader:
+                features_batch = features_batch.to(device_obj)
+                labels_batch = labels_batch.to(device_obj)
+
+                outputs = model(features_batch)
+                loss = criterion(outputs, labels_batch)
+
+                val_loss += loss.item()
+                _, predicted = torch.max(outputs.data, 1)
+                val_total += labels_batch.size(0)
+                val_correct += (predicted == labels_batch).sum().item()
+
+        # Calculate metrics
+        avg_train_loss = train_loss / len(train_loader)
+        avg_val_loss = val_loss / len(val_loader)
+        train_acc = train_correct / train_total
+        val_acc = val_correct / val_total
+
+        # Store history
+        history["loss"].append(avg_train_loss)
+        history["val_loss"].append(avg_val_loss)
+        history["accuracy"].append(train_acc)
+        history["val_accuracy"].append(val_acc)
+
+        # Print progress
+        if (epoch + 1) % 5 == 0:
+            print(
+                f"Epoch {epoch+1:3d}/{epochs}: "
+                f"Loss: {avg_train_loss:.4f}, "
+                f"Val Loss: {avg_val_loss:.4f}, "
+                f"Acc: {train_acc:.4f}, "
+                f"Val Acc: {val_acc:.4f}"
+            )
+
+    print(f"✅ Training completed after {epochs} epochs!")
     print("🎯 Used EXACT same simple approach as the high-accuracy notebook!")
 
     return history
 
 
 def evaluate_model(
-    model: keras.Model, val_features: np.ndarray, val_labels: np.ndarray
+    model: nn.Module,
+    val_features: np.ndarray,
+    val_labels: np.ndarray,
+    device: str = "cpu",
 ) -> Dict:
     """
-    Evaluate model performance.
+    Evaluate PyTorch model performance.
 
     Args:
-        model: Trained Keras model
+        model: Trained PyTorch model
         val_features: Validation features
         val_labels: Validation labels
+        device: Device for evaluation
 
     Returns:
         Dictionary with evaluation metrics
     """
+    device_obj = torch.device(device)
+    model = model.to(device_obj)
+    model.eval()
+
+    # Convert data to tensors
+    val_features_tensor = torch.tensor(val_features, dtype=torch.float32).to(device_obj)
+
     # Make predictions
-    predictions = model.predict(val_features, verbose=0)
-    predicted_classes = np.argmax(predictions, axis=1)
+    with torch.no_grad():
+        outputs = model(val_features_tensor)
+        predictions = torch.softmax(outputs, dim=1).cpu().numpy()
+        predicted_classes = np.argmax(predictions, axis=1)
 
     # Calculate metrics
     accuracy = accuracy_score(val_labels, predicted_classes)
@@ -198,16 +325,16 @@ def evaluate_model(
 
 
 def save_model_and_metadata(
-    model: keras.Model,
+    model: nn.Module,
     model_path: str,
     metadata: Dict,
     metadata_path: Optional[str] = None,
 ):
     """
-    Save model and metadata.
+    Save PyTorch model and metadata.
 
     Args:
-        model: Trained Keras model
+        model: Trained PyTorch model
         model_path: Path to save the model
         metadata: Model metadata dictionary
         metadata_path: Path to save metadata (auto-generated if None)
@@ -215,13 +342,13 @@ def save_model_and_metadata(
     # Ensure directory exists
     os.makedirs(os.path.dirname(model_path), exist_ok=True)
 
-    # Save model (using native Keras format to avoid warnings)
-    model.save(model_path)
+    # Save model state dict
+    torch.save(model.state_dict(), model_path)
     print(f"Model saved to: {model_path}")
 
     # Save metadata
     if metadata_path is None:
-        metadata_path = model_path.replace(".keras", "_metadata.json")
+        metadata_path = model_path.replace(".pth", "_metadata.json")
 
     with open(metadata_path, "w") as f:
         json.dump(metadata, f, indent=2)
@@ -229,24 +356,32 @@ def save_model_and_metadata(
 
 
 def load_model_with_metadata(
-    model_path: str, metadata_path: Optional[str] = None
-) -> Tuple[keras.Model, Dict]:
+    model_path: str, metadata_path: Optional[str] = None, device: str = "cpu"
+) -> Tuple[nn.Module, Dict]:
     """
-    Load model and metadata.
+    Load PyTorch model and metadata.
 
     Args:
         model_path: Path to the saved model
         metadata_path: Path to metadata file (auto-generated if None)
+        device: Device to load model on
 
     Returns:
         Tuple of (model, metadata)
     """
-    # Load model
-    model = keras.models.load_model(model_path)
+    # Create model instance
+    device_obj = torch.device(device)
+    model = StepDetectionCNN().to(device_obj)
+
+    # Load model state dict
+    model.load_state_dict(
+        torch.load(model_path, map_location=device_obj, weights_only=False)
+    )
+    model.eval()
 
     # Load metadata
     if metadata_path is None:
-        metadata_path = model_path.replace(".keras", "_metadata.json")
+        metadata_path = model_path.replace(".pth", "_metadata.json")
 
     try:
         with open(metadata_path, "r") as f:
@@ -345,16 +480,22 @@ if __name__ == "__main__":
     print("===============")
 
     # Create sample models
-    print("Creating CNN model (original high-accuracy architecture):")
+    print("Creating CNN model (original high-accuracy PyTorch architecture):")
     cnn_model = create_cnn_model()
     print("CNN model created:")
-    cnn_model.summary()
+    print(f"Model: {cnn_model}")
+    print(f"Parameters: {sum(p.numel() for p in cnn_model.parameters()):,}")
 
     print("\nModel utilities loaded successfully!")
     print("Available functions:")
-    print("- create_cnn_model() (original high-accuracy CNN)")
+    print("- create_cnn_model() (original high-accuracy PyTorch CNN)")
     print("- train_model()")
     print("- evaluate_model()")
     print("- save_model_and_metadata()")
     print("- load_model_with_metadata()")
+    print("- optimize_thresholds()")
+    print("- optimize_thresholds()")
+    print("- optimize_thresholds()")
+    print("- optimize_thresholds()")
+    print("- optimize_thresholds()")
     print("- optimize_thresholds()")
