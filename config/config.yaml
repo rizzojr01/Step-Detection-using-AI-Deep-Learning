@@ -4,8 +4,12 @@
 detection:
   # Sensor buffer and thresholds
   window_size: 10 # Number of recent sensor readings to consider
-  start_threshold: 0.3 # Threshold for step start detection
-  end_threshold: 0.3 # Threshold for step end detection
+  start_threshold: 0.3 # Threshold for step start detection (increased from 0.3)
+  end_threshold: 0.3 # Threshold for step end detection (increased from 0.3)
+
+  # AI Model confidence requirements
+  ai_high_confidence_threshold: 0.3 # High confidence threshold for AI-only detection
+  ai_sensor_disagree_threshold: 0.3 # Required AI confidence when sensors disagree
 
   # Motion detection thresholds (balanced for accuracy)
   motion_threshold: 11.0 # Acceleration magnitude threshold for step detection (above gravity + margin)
@@ -58,3 +62,4 @@ data:
 # Debug Configuration
 debug:
   enable_step_detection_logs: true
+  log_only_on_steps: false

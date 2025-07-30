@@ -7,20 +7,76 @@ from pydantic import BaseModel, Field
 
 from src.initialize_model import load_production_model
 from src.step_detection.core.detector import RealTimeStepCounter
-from src.step_detection.utils.config import get_config
+from src.step_detection.utils.config_db import (
+    get_all_config,
+    get_config_value,
+    set_config_value,
+)
 
 # FastAPI app instance
-config = get_config()
+config = get_all_config()
 app = FastAPI(
-    title=config.get("api.title", "Step Detection API"),
+    title=get_config_value("api.title", "Step Detection API"),
     description="Real-time step detection using deep learning models",
-    version=config.get("api.version", "2.0.0"),
+    version=get_config_value("api.version", "2.0.0"),
     docs_url="/docs",
     redoc_url="/redoc",
 )
 
 # Global step counter instance
+# Global step counter instance
+
 step_counter = None
+
+
+# --- Config API endpoints ---
+class ConfigItem(BaseModel):
+    key: str
+    value: str
+
+
+# Only allow these keys to be managed via API
+ALLOWED_CONFIG_KEYS = [
+    "window_size",
+    "start_threshold",
+    "end_threshold",
+    "min_step_interval",
+    "motion_threshold",
+    "gyro_threshold",
+    "min_motion_variance",
+    "stillness_threshold",
+    # Add more detection keys as needed
+]
+
+
+@app.get("/config", response_model=List[ConfigItem])
+def get_config_api():
+    """Get all important detection config values"""
+    all_items = get_all_config()
+    items = [
+        ConfigItem(key=k, value=v)
+        for k, v in all_items.items()
+        if k in ALLOWED_CONFIG_KEYS
+    ]
+    return items
+
+
+@app.get("/config/{key}", response_model=ConfigItem)
+def get_config_key_api(key: str):
+    if key not in ALLOWED_CONFIG_KEYS:
+        raise HTTPException(status_code=403, detail="Config key not allowed")
+    val = get_config_value(key)
+    if val is None:
+        raise HTTPException(status_code=404, detail="Config key not found")
+    return ConfigItem(key=key, value=val)
+
+
+@app.post("/config/{key}", response_model=ConfigItem)
+def set_config_key_api(key: str, value: str):
+    if key not in ALLOWED_CONFIG_KEYS:
+        raise HTTPException(status_code=403, detail="Config key not allowed")
+    set_config_value(key, value)
+    return ConfigItem(key=key, value=value)
 
 
 import time
@@ -216,10 +272,9 @@ async def websocket_endpoint(websocket: WebSocket):
 if __name__ == "__main__":
     import uvicorn
 
-    config = get_config()
-    host = config.get("api.host", "0.0.0.0")
-    port = config.get("api.port", 8000)
-    reload = config.get("api.reload", True)
+    host = get_config_value("api.host", "0.0.0.0")
+    port = int(get_config_value("api.port", 8000))
+    reload = get_config_value("api.reload", "True") == "True"
 
     print("🚀 Starting Step Detection API with FastAPI")
     print(f"📖 API Documentation: http://localhost:{port}/docs")
