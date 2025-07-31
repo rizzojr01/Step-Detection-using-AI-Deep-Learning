@@ -14,7 +14,8 @@ image = (
 @app.function(
     image=image,
     scaledown_window=600,
-    max_containers=3,
+    max_containers=1,
+    concurrency_limit=1,
     timeout=1200,
 )
 @modal.asgi_app()
