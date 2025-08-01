@@ -89,13 +89,53 @@ async def websocket_endpoint(websocket: WebSocket):
         await websocket.close()
         return
 
+    # Timeout settings - 5 minutes of inactivity
+    timeout_seconds = 5 * 60  # 5 minutes
+    last_activity = time.time()
+
     try:
         while True:
             try:
-                # Receive sensor data
-                data = await websocket.receive_json()
+                # Check for timeout (5 minutes of inactivity)
+                current_time = time.time()
+                if current_time - last_activity > timeout_seconds:
+                    await websocket.send_json(
+                        {
+                            "type": "timeout_response",
+                            "status": "timeout",
+                            "message": "Connection closed due to 5 minutes of inactivity",
+                            "timestamp": str(current_time),
+                        }
+                    )
+                    await websocket.close()
+                    return
 
-                # Check for reset action - HIGHEST PRIORITY
+                # Receive sensor data with timeout
+                import asyncio
+
+                try:
+                    data = await asyncio.wait_for(
+                        websocket.receive_json(), timeout=60.0
+                    )  # 1 minute timeout for each receive
+                    last_activity = time.time()  # Update activity timestamp
+                except asyncio.TimeoutError:
+                    # Continue loop to check for overall timeout
+                    continue
+
+                # Check for stop action - HIGHEST PRIORITY
+                if isinstance(data, dict) and data.get("action") == "stop":
+                    await websocket.send_json(
+                        {
+                            "type": "stop_response",
+                            "status": "success",
+                            "message": "Step detection stopped. WebSocket connection will be closed.",
+                            "timestamp": str(time.time()),
+                        }
+                    )
+                    await websocket.close()
+                    return
+
+                # Check for reset action - SECOND PRIORITY
                 if isinstance(data, dict) and data.get("action") == "reset":
                     step_counter.reset()  # Use the proper reset method
                     await websocket.send_json(
