@@ -1,10 +1,12 @@
+import asyncio
 import time
+import uuid
 from contextlib import asynccontextmanager
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 import numpy as np
 import torch
-from fastapi import FastAPI, HTTPException, WebSocket
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, Field
 
 from src.initialize_model import load_production_model
@@ -15,20 +17,23 @@ from src.step_detection.utils.config_db import (
     set_config_value,
 )
 
-# FastAPI app instance
+# Global model storage - shared across all users for efficiency
+global_model = None
+global_device = None
 
-# Global step counter instance
-# Global step counter instance
-
-step_counter = None
+# Active user sessions - each WebSocket connection gets its own step counter
+active_sessions: Dict[str, Dict] = {}
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     print("🚀 Starting Step Detection API...")
-    initialize_model()
+    app.state.start_time = time.time()
+    initialize_global_model()
     yield
     print("🔌 Shutting down Step Detection API...")
+    # Cleanup all active sessions
+    active_sessions.clear()
 
 
 app = FastAPI(
@@ -40,13 +45,10 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# Global step counter instance
-step_counter = None
 
-
-def initialize_model():
-    """Initialize the step detection model using pre-trained weights"""
-    global step_counter
+def initialize_global_model():
+    """Initialize the global model to be shared across all user sessions"""
+    global global_model, global_device
 
     try:
         # Load the pre-trained model
@@ -64,45 +66,133 @@ def initialize_model():
             model.eval()
             print(f"⚠️  Using untrained model on {device}")
 
-        # Initialize step counter with the loaded model
-        step_counter = RealTimeStepCounter(model=model, device=str(device))
+        # Store globally for sharing across sessions
+        global_model = model
+        global_device = str(device)
 
-        print(f"✅ Step counter initialized successfully")
+        print(f"✅ Global model initialized successfully on {device}")
         return True
 
     except Exception as e:
-        print(f"❌ Error initializing model: {e}")
+        print(f"❌ Error initializing global model: {e}")
         return False
+
+
+def create_user_session(session_id: str) -> bool:
+    """Create a new user session with its own step counter"""
+    try:
+        if global_model is None or global_device is None:
+            print(
+                f"❌ Cannot create session {session_id}: Global model not initialized"
+            )
+            return False
+
+        # Create individual step counter for this user
+        step_counter = RealTimeStepCounter(model=global_model, device=global_device)
+
+        # Store session data
+        active_sessions[session_id] = {
+            "step_counter": step_counter,
+            "created_at": time.time(),
+            "last_activity": time.time(),
+            "total_requests": 0,
+        }
+
+        print(f"✅ Created new user session: {session_id}")
+        return True
+
+    except Exception as e:
+        print(f"❌ Error creating session {session_id}: {e}")
+        return False
+
+
+def cleanup_session(session_id: str):
+    """Clean up a user session"""
+    if session_id in active_sessions:
+        session_data = active_sessions[session_id]
+        duration = time.time() - session_data["created_at"]
+        total_requests = session_data["total_requests"]
+
+        del active_sessions[session_id]
+        print(
+            f"🧹 Cleaned up session {session_id} (Duration: {duration:.1f}s, Requests: {total_requests})"
+        )
+
+
+def get_session_stats() -> Dict:
+    """Get statistics about active sessions"""
+    return {
+        "active_sessions": len(active_sessions),
+        "total_requests": sum(
+            session["total_requests"] for session in active_sessions.values()
+        ),
+        "sessions": {
+            session_id: {
+                "duration": time.time() - session["created_at"],
+                "requests": session["total_requests"],
+                "last_activity": session["last_activity"],
+            }
+            for session_id, session in active_sessions.items()
+        },
+    }
 
 
 @app.websocket("/ws/realtime")
 async def websocket_endpoint(websocket: WebSocket):
     """
     WebSocket endpoint for real-time step detection streaming
-
-    Send sensor data as JSON and receive real-time step detection results
+    Each connection gets its own isolated session and step counter
     """
+    # Generate unique session ID for this connection
+    session_id = str(uuid.uuid4())
+
     await websocket.accept()
 
-    if step_counter is None:
-        await websocket.send_json({"error": "Step detection model not initialized"})
+    # Check if global model is initialized
+    if global_model is None:
+        await websocket.send_json(
+            {"error": "Step detection model not initialized", "session_id": session_id}
+        )
         await websocket.close()
         return
 
+    # Create individual session for this user
+    if not create_user_session(session_id):
+        await websocket.send_json(
+            {"error": "Failed to create user session", "session_id": session_id}
+        )
+        await websocket.close()
+        return
+
+    # Get this user's step counter
+    user_step_counter = active_sessions[session_id]["step_counter"]
+
+    # Send welcome message with session info
+    await websocket.send_json(
+        {
+            "type": "session_started",
+            "session_id": session_id,
+            "message": "Step detection session initialized successfully",
+            "timestamp": str(time.time()),
+        }
+    )
+
     # Timeout settings - 5 minutes of inactivity
     timeout_seconds = 5 * 60  # 5 minutes
-    last_activity = time.time()
 
     try:
         while True:
             try:
                 # Check for timeout (5 minutes of inactivity)
                 current_time = time.time()
+                last_activity = active_sessions[session_id]["last_activity"]
+
                 if current_time - last_activity > timeout_seconds:
                     await websocket.send_json(
                         {
                             "type": "timeout_response",
                             "status": "timeout",
+                            "session_id": session_id,
                             "message": "Connection closed due to 5 minutes of inactivity",
                             "timestamp": str(current_time),
                         }
@@ -111,24 +201,35 @@ async def websocket_endpoint(websocket: WebSocket):
                     return
 
                 # Receive sensor data with timeout
-                import asyncio
-
                 try:
                     data = await asyncio.wait_for(
                         websocket.receive_json(), timeout=60.0
                     )  # 1 minute timeout for each receive
-                    last_activity = time.time()  # Update activity timestamp
+
+                    # Update activity timestamp and request count
+                    active_sessions[session_id]["last_activity"] = time.time()
+                    active_sessions[session_id]["total_requests"] += 1
+
                 except asyncio.TimeoutError:
                     # Continue loop to check for overall timeout
                     continue
 
                 # Check for stop action - HIGHEST PRIORITY
                 if isinstance(data, dict) and data.get("action") == "stop":
+                    session_stats = get_session_stats()
                     await websocket.send_json(
                         {
                             "type": "stop_response",
                             "status": "success",
+                            "session_id": session_id,
                             "message": "Step detection stopped. WebSocket connection will be closed.",
+                            "session_stats": {
+                                "duration": time.time()
+                                - active_sessions[session_id]["created_at"],
+                                "total_requests": active_sessions[session_id][
+                                    "total_requests"
+                                ],
+                            },
                             "timestamp": str(time.time()),
                         }
                     )
@@ -137,19 +238,46 @@ async def websocket_endpoint(websocket: WebSocket):
 
                 # Check for reset action - SECOND PRIORITY
                 if isinstance(data, dict) and data.get("action") == "reset":
-                    step_counter.reset()  # Use the proper reset method
+                    user_step_counter.reset()  # Reset only this user's counter
                     await websocket.send_json(
                         {
                             "type": "reset_response",
                             "status": "success",
-                            "message": "Step counter has been reset",
+                            "session_id": session_id,
+                            "message": "Step counter has been reset for this session",
                             "total_steps": 0,
                             "timestamp": str(time.time()),
                         }
                     )
                     continue
 
-                # Validate required fields
+                # Check for stats request
+                if isinstance(data, dict) and data.get("action") == "stats":
+                    session_stats = get_session_stats()
+                    user_session = active_sessions[session_id]
+                    await websocket.send_json(
+                        {
+                            "type": "stats_response",
+                            "status": "success",
+                            "session_id": session_id,
+                            "user_stats": {
+                                "session_duration": time.time()
+                                - user_session["created_at"],
+                                "total_requests": user_session["total_requests"],
+                                "last_activity": user_session["last_activity"],
+                            },
+                            "server_stats": {
+                                "active_sessions": session_stats["active_sessions"],
+                                "total_server_requests": session_stats[
+                                    "total_requests"
+                                ],
+                            },
+                            "timestamp": str(time.time()),
+                        }
+                    )
+                    continue
+
+                # Validate required fields for sensor data
                 required_fields = [
                     "accel_x",
                     "accel_y",
@@ -161,14 +289,18 @@ async def websocket_endpoint(websocket: WebSocket):
                 if not all(field in data for field in required_fields):
                     try:
                         await websocket.send_json(
-                            {"error": "Missing sensor data fields"}
+                            {
+                                "error": "Missing sensor data fields",
+                                "session_id": session_id,
+                                "required_fields": required_fields,
+                            }
                         )
                     except:
                         break  # Client disconnected
                     continue
 
-                # Process sensor reading
-                result = step_counter.add_sensor_reading(
+                # Process sensor reading with user's individual step counter
+                result = user_step_counter.add_sensor_reading(
                     accel_x=float(data["accel_x"]),
                     accel_y=float(data["accel_y"]),
                     accel_z=float(data["accel_z"]),
@@ -177,10 +309,10 @@ async def websocket_endpoint(websocket: WebSocket):
                     gyro_z=float(data["gyro_z"]),
                 )
 
-                # Convert to the format expected by frontend (matching Dart class structure)
-                # Convert to the format expected by frontend (matching StepDetectionResult model)
+                # Convert to the format expected by frontend
                 json_safe_result = {
                     "type": "step_detection",
+                    "session_id": session_id,
                     "step_detected": bool(result["step_detected"]),
                     "prediction": {
                         "confidence": float(result["max_confidence"]),
@@ -200,13 +332,13 @@ async def websocket_endpoint(websocket: WebSocket):
                         ),
                     },
                     "total_steps": int(result["step_count"]),
-                    "total_predictions": 1,  # Each call is one prediction
+                    "total_predictions": active_sessions[session_id]["total_requests"],
                     "buffer_size": (
-                        len(step_counter.sensor_buffer)
-                        if hasattr(step_counter, "sensor_buffer")
+                        len(user_step_counter.sensor_buffer)
+                        if hasattr(user_step_counter, "sensor_buffer")
                         else 0
                     ),
-                    "timestamp": str(time.time()),  # Unix timestamp as string
+                    "timestamp": str(time.time()),
                     "message": (
                         "Step detection processed successfully"
                         if result["status"] == "success"
@@ -222,24 +354,88 @@ async def websocket_endpoint(websocket: WebSocket):
                     break  # Client disconnected
 
             except Exception as e:
-                # Handle individual operation errors (e.g., invalid JSON, processing errors)
+                # Handle individual operation errors
                 try:
-                    await websocket.send_json({"error": f"Processing error: {e}"})
+                    await websocket.send_json(
+                        {"error": f"Processing error: {e}", "session_id": session_id}
+                    )
                 except:
                     break  # Client disconnected
 
+    except WebSocketDisconnect:
+        print(f"🔌 WebSocket disconnected for session: {session_id}")
     except Exception as e:
         # Only try to send error message if WebSocket is still open
         try:
             if websocket.client_state.value == 1:  # CONNECTED state
-                await websocket.send_json({"error": f"WebSocket error: {e}"})
+                await websocket.send_json(
+                    {"error": f"WebSocket error: {e}", "session_id": session_id}
+                )
         except:
             pass  # WebSocket already closed, ignore
-        finally:
-            try:
-                await websocket.close()
-            except:
-                pass  # WebSocket already closed, ignore
+    finally:
+        # Always cleanup session when connection ends
+        cleanup_session(session_id)
+        try:
+            await websocket.close()
+        except:
+            pass  # WebSocket already closed, ignore
+
+
+# --- Session Management API endpoints ---
+
+
+@app.get("/sessions")
+def get_active_sessions():
+    """Get information about all active sessions"""
+    return get_session_stats()
+
+
+@app.get("/sessions/{session_id}")
+def get_session_info(session_id: str):
+    """Get detailed information about a specific session"""
+    if session_id not in active_sessions:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    session = active_sessions[session_id]
+    return {
+        "session_id": session_id,
+        "created_at": session["created_at"],
+        "last_activity": session["last_activity"],
+        "duration": time.time() - session["created_at"],
+        "total_requests": session["total_requests"],
+        "is_active": True,
+    }
+
+
+@app.delete("/sessions/{session_id}")
+def terminate_session(session_id: str):
+    """Manually terminate a specific session"""
+    if session_id not in active_sessions:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    cleanup_session(session_id)
+    return {
+        "message": f"Session {session_id} terminated successfully",
+        "timestamp": str(time.time()),
+    }
+
+
+@app.get("/health")
+def health_check():
+    """Health check endpoint with system status"""
+    return {
+        "status": "healthy",
+        "model_loaded": global_model is not None,
+        "device": global_device,
+        "active_sessions": len(active_sessions),
+        "timestamp": str(time.time()),
+        "uptime": (
+            time.time() - app.state.start_time
+            if hasattr(app.state, "start_time")
+            else None
+        ),
+    }
 
 
 # --- Config API endpoints ---
