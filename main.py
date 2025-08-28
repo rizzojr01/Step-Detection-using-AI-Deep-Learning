@@ -24,6 +24,9 @@ global_device = None
 # Active user sessions - each WebSocket connection gets its own step counter
 active_sessions: Dict[str, Dict] = {}
 
+# User to session mapping - track which session belongs to which user
+user_sessions: Dict[str, str] = {}  # user_id -> session_id
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -34,6 +37,7 @@ async def lifespan(app: FastAPI):
     print("🔌 Shutting down Step Detection API...")
     # Cleanup all active sessions
     active_sessions.clear()
+    user_sessions.clear()
 
 
 app = FastAPI(
@@ -78,7 +82,7 @@ def initialize_global_model():
         return False
 
 
-def create_user_session(session_id: str) -> bool:
+def create_user_session(session_id: str, user_id: Optional[str] = None) -> bool:
     """Create a new user session with its own step counter"""
     try:
         if global_model is None or global_device is None:
@@ -93,12 +97,21 @@ def create_user_session(session_id: str) -> bool:
         # Store session data
         active_sessions[session_id] = {
             "step_counter": step_counter,
+            "user_id": user_id,
+            "websocket": None,  # Will be set when WebSocket is assigned
             "created_at": time.time(),
             "last_activity": time.time(),
             "total_requests": 0,
         }
 
-        print(f"✅ Created new user session: {session_id}")
+        # Track user to session mapping if user_id provided
+        if user_id:
+            user_sessions[user_id] = session_id
+
+        print(
+            f"✅ Created new user session: {session_id}"
+            + (f" for user: {user_id}" if user_id else "")
+        )
         return True
 
     except Exception as e:
@@ -112,22 +125,67 @@ def cleanup_session(session_id: str):
         session_data = active_sessions[session_id]
         duration = time.time() - session_data["created_at"]
         total_requests = session_data["total_requests"]
+        user_id = session_data.get("user_id")
+
+        # Remove from user_sessions mapping if user_id exists
+        if (
+            user_id
+            and user_id in user_sessions
+            and user_sessions[user_id] == session_id
+        ):
+            del user_sessions[user_id]
 
         del active_sessions[session_id]
         print(
-            f"🧹 Cleaned up session {session_id} (Duration: {duration:.1f}s, Requests: {total_requests})"
+            f"🧹 Cleaned up session {session_id}"
+            + (f" for user {user_id}" if user_id else "")
+            + f" (Duration: {duration:.1f}s, Requests: {total_requests})"
         )
+
+
+async def close_user_existing_session(user_id: str):
+    """Close existing WebSocket session for a user if it exists"""
+    if user_id in user_sessions:
+        old_session_id = user_sessions[user_id]
+        if old_session_id in active_sessions:
+            old_session = active_sessions[old_session_id]
+            old_websocket = old_session.get("websocket")
+
+            if old_websocket:
+                try:
+                    await old_websocket.send_json(
+                        {
+                            "type": "session_replaced",
+                            "status": "replaced",
+                            "session_id": old_session_id,
+                            "message": "Session closed due to new connection from same user",
+                            "timestamp": str(time.time()),
+                        }
+                    )
+                    await old_websocket.close()
+                    print(
+                        f"🔄 Closed previous session {old_session_id} for user {user_id}"
+                    )
+                except:
+                    print(
+                        f"⚠️ Could not gracefully close previous session {old_session_id} for user {user_id}"
+                    )
+
+            # Clean up the old session
+            cleanup_session(old_session_id)
 
 
 def get_session_stats() -> Dict:
     """Get statistics about active sessions"""
     return {
         "active_sessions": len(active_sessions),
+        "active_users": len(user_sessions),
         "total_requests": sum(
             session["total_requests"] for session in active_sessions.values()
         ),
         "sessions": {
             session_id: {
+                "user_id": session.get("user_id"),
                 "duration": time.time() - session["created_at"],
                 "requests": session["total_requests"],
                 "last_activity": session["last_activity"],
@@ -138,44 +196,13 @@ def get_session_stats() -> Dict:
 
 
 @app.websocket("/ws/realtime")
-async def websocket_endpoint(websocket: WebSocket):
+async def websocket_endpoint(websocket: WebSocket, user_id: Optional[str] = None):
     """
     WebSocket endpoint for real-time step detection streaming
     Each connection gets its own isolated session and step counter
+    If user_id is provided, closes any existing session for that user
     """
-    # Generate unique session ID for this connection
-    session_id = str(uuid.uuid4())
-
-    await websocket.accept()
-
-    # Check if global model is initialized
-    if global_model is None:
-        await websocket.send_json(
-            {"error": "Step detection model not initialized", "session_id": session_id}
-        )
-        await websocket.close()
-        return
-
-    # Create individual session for this user
-    if not create_user_session(session_id):
-        await websocket.send_json(
-            {"error": "Failed to create user session", "session_id": session_id}
-        )
-        await websocket.close()
-        return
-
-    # Get this user's step counter
-    user_step_counter = active_sessions[session_id]["step_counter"]
-
-    # Send welcome message with session info
-    await websocket.send_json(
-        {
-            "type": "session_started",
-            "session_id": session_id,
-            "message": "Step detection session initialized successfully",
-            "timestamp": str(time.time()),
-        }
-    )
+    return await websocket_endpoint_internal(websocket, user_id)
 
     # Timeout settings - 5 minutes of inactivity
     timeout_seconds = 5 * 60  # 5 minutes
@@ -382,6 +409,66 @@ async def websocket_endpoint(websocket: WebSocket):
             pass  # WebSocket already closed, ignore
 
 
+@app.websocket("/ws/realtime/{user_id}")
+async def websocket_endpoint_with_user(websocket: WebSocket, user_id: str):
+    """
+    WebSocket endpoint with user ID for automatic session replacement
+    Automatically closes any existing session for the same user
+    """
+    return await websocket_endpoint_internal(websocket, user_id)
+
+
+async def websocket_endpoint_internal(
+    websocket: WebSocket, user_id: Optional[str] = None
+):
+    """
+    Internal WebSocket handler that supports both anonymous and user-based connections
+    """
+    # Generate unique session ID for this connection
+    session_id = str(uuid.uuid4())
+
+    await websocket.accept()
+
+    # Check if global model is initialized
+    if global_model is None:
+        await websocket.send_json(
+            {"error": "Step detection model not initialized", "session_id": session_id}
+        )
+        await websocket.close()
+        return
+
+    # If user_id provided, close any existing session for this user
+    if user_id:
+        await close_user_existing_session(user_id)
+
+    # Create individual session for this user
+    if not create_user_session(session_id, user_id):
+        await websocket.send_json(
+            {"error": "Failed to create user session", "session_id": session_id}
+        )
+        await websocket.close()
+        return
+
+    # Store WebSocket reference in session for potential cleanup
+    active_sessions[session_id]["websocket"] = websocket
+
+    # Get this user's step counter
+    user_step_counter = active_sessions[session_id]["step_counter"]
+
+    # Send welcome message with session info
+    await websocket.send_json(
+        {
+            "type": "session_started",
+            "session_id": session_id,
+            "user_id": user_id,
+            "message": "Step detection session initialized successfully"
+            + (f" for user {user_id}" if user_id else ""),
+            "replaced_previous": user_id is not None,
+            "timestamp": str(time.time()),
+        }
+    )
+
+
 # --- Session Management API endpoints ---
 
 
@@ -389,6 +476,47 @@ async def websocket_endpoint(websocket: WebSocket):
 def get_active_sessions():
     """Get information about all active sessions"""
     return get_session_stats()
+
+
+@app.get("/users")
+def get_active_users():
+    """Get information about all active users and their sessions"""
+    return {
+        "active_users": len(user_sessions),
+        "users": {
+            user_id: {
+                "session_id": session_id,
+                "session_info": {
+                    "created_at": active_sessions[session_id]["created_at"],
+                    "last_activity": active_sessions[session_id]["last_activity"],
+                    "duration": time.time() - active_sessions[session_id]["created_at"],
+                    "total_requests": active_sessions[session_id]["total_requests"],
+                },
+            }
+            for user_id, session_id in user_sessions.items()
+            if session_id in active_sessions
+        },
+    }
+
+
+@app.delete("/users/{user_id}")
+def terminate_user_session(user_id: str):
+    """Manually terminate a user's active session"""
+    if user_id not in user_sessions:
+        raise HTTPException(status_code=404, detail="User session not found")
+
+    session_id = user_sessions[user_id]
+    if session_id in active_sessions:
+        cleanup_session(session_id)
+        return {
+            "message": f"User {user_id} session terminated successfully",
+            "session_id": session_id,
+            "timestamp": str(time.time()),
+        }
+    else:
+        # Clean up orphaned user mapping
+        del user_sessions[user_id]
+        raise HTTPException(status_code=404, detail="User session already terminated")
 
 
 @app.get("/sessions/{session_id}")
@@ -429,6 +557,7 @@ def health_check():
         "model_loaded": global_model is not None,
         "device": global_device,
         "active_sessions": len(active_sessions),
+        "active_users": len(user_sessions),
         "timestamp": str(time.time()),
         "uptime": (
             time.time() - app.state.start_time
