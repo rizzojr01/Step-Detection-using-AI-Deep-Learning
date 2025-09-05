@@ -14,7 +14,8 @@ image = (
 @app.function(
     image=image,
     scaledown_window=600,
-    max_containers=1,
+    max_inputs=10,
+    # max_containers=1,
     #timeout=60,
 )
 @modal.asgi_app()
