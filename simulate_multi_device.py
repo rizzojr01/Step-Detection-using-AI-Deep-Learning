@@ -407,10 +407,13 @@ async def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  %(prog)s                    # Simulate 5 devices
+  %(prog)s                    # Simulate 5 devices (local by default)
   %(prog)s --devices 10       # Simulate 10 devices
+  %(prog)s --deployment local # Use localhost explicitly
+  %(prog)s --deployment modal # Use Modal deployment
   %(prog)s --verbose          # Show detailed information
   %(prog)s --host 192.168.1.100 --port 8080  # Custom host/port
+  %(prog)s --url wss://your-app.modal.run/ws/realtime  # Custom URL
         """,
     )
     parser.add_argument(
@@ -420,10 +423,19 @@ Examples:
         help="Number of devices to simulate (default: 5)",
     )
     parser.add_argument(
+        "--deployment",
+        choices=["local", "modal"],
+        help="Deployment environment (sets URL automatically)",
+    )
+    parser.add_argument(
         "--host", default="localhost", help="WebSocket host (default: localhost)"
     )
     parser.add_argument(
         "--port", type=int, default=8000, help="WebSocket port (default: 8000)"
+    )
+    parser.add_argument(
+        "--url",
+        help="Full WebSocket URL (overrides host/port and deployment). Use wss:// for secure connections",
     )
     parser.add_argument(
         "--duration",
@@ -443,12 +455,28 @@ Examples:
     # Print header
     console.print("\n🚀 [bold green]Multi-Device Step Detection Simulator[/bold green]")
     console.print(f"📱 Simulating [cyan]{args.devices}[/cyan] devices")
+
+    # Determine WebSocket URL
+    if args.url:
+        base_uri = args.url.rstrip("/")
+        display_url = base_uri
+    elif args.deployment == "modal":
+        base_uri = (
+            "wss://nyu-vision--step-detection-app-fastapi-app.modal.run/ws/realtime"
+        )
+        display_url = base_uri
+    elif args.deployment == "local":
+        base_uri = f"ws://{args.host}:{args.port}/ws/realtime"
+        display_url = base_uri
+    else:
+        # Default to local if no deployment specified
+        base_uri = f"ws://{args.host}:{args.port}/ws/realtime"
+        display_url = base_uri
+
     console.print(
-        f"🌐 Connecting to [blue]ws://{args.host}:{args.port}/ws/realtime[/blue] (session-based multi-user)"
+        f"🌐 Connecting to [blue]{display_url}[/blue] (session-based multi-user)"
     )
     console.print("🎯 Generating realistic walking sensor data\n")
-
-    base_uri = f"ws://{args.host}:{args.port}/ws/realtime"
 
     devices = []
     tasks = []
