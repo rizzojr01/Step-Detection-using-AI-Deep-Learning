@@ -14,9 +14,7 @@ image = (
 @app.function(
     image=image,
     scaledown_window=600,
-    max_inputs=10,
-    # max_containers=1,
-    #timeout=60,
+    max_containers=20,
 )
 @modal.asgi_app()
 def fastapi_app():
