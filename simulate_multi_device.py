@@ -11,6 +11,7 @@ import asyncio
 import json
 import math
 import random
+import ssl
 import threading
 import time
 from collections import defaultdict
@@ -161,7 +162,13 @@ class DeviceSimulator:
     async def simulate(self):
         try:
             print(f"🔌 Device {self.device_id}: Connecting to {self.uri}...")
-            async with websockets.connect(self.uri) as websocket:
+
+            # Create SSL context that doesn't verify certificates
+            ssl_context = ssl.create_default_context()
+            ssl_context.check_hostname = False
+            ssl_context.verify_mode = ssl.CERT_NONE
+
+            async with websockets.connect(self.uri, ssl=ssl_context) as websocket:
                 self.connected = True
                 print(f"✅ Device {self.device_id}: Connected successfully!")
 
